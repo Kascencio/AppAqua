@@ -21,6 +21,7 @@ import {
   Bell,
   Map as MapIcon,
   BarChart3,
+  Shield,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -111,6 +112,12 @@ function Sidebar({ className }: SidebarProps) {
       icon: Users,
       title: "Usuarios",
       roles: ["superadmin", "admin"], // superadmin/admin gestionan usuarios
+    },
+    {
+      href: "/users/roles",
+      icon: Shield,
+      title: "Tipos de Usuario",
+      roles: ["superadmin", "admin"], // superadmin/admin gestionan tipos de usuario
     },
   ]
 

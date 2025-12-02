@@ -1,8 +1,25 @@
 export interface Proceso {
   id_proceso: number
   id_especie: number
+  id_instalacion: number
   fecha_inicio: string
   fecha_final: string
+}
+
+// Tipo híbrido que combina datos básicos con campos calculados
+export interface ProcesoConCalculos extends Proceso {
+  codigo_proceso?: string
+  estado?: "activo" | "completado" | "pausado" | "extendido"
+  progreso?: number
+  descripcion?: string
+  nombre_especie?: string
+  nombre_instalacion?: string
+  nombre_sucursal?: string
+  dias_originales?: number
+  dias_extension?: number
+  dias_totales?: number
+  motivo_extension?: string
+  fecha_fin_real?: string
 }
 
 export interface ProcesoDetallado extends Proceso {

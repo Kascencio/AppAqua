@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
-import { JWTUtils, USER_ROLES } from "@/lib/auth-utils"
+import { JWTUtils } from "@/lib/auth-utils"
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,7 +49,9 @@ export async function POST(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const decoded = JWTUtils.verifyToken(token)
     if (!decoded) return NextResponse.json({ error: "Token inválido" }, { status: 401 })
-    if (![USER_ROLES.SUPERADMIN, USER_ROLES.ADMIN].includes(decoded.id_rol)) {
+    const role = await prisma.tipo_rol.findUnique({ where: { id_rol: decoded.id_rol } })
+    const roleName = role?.nombre?.toLowerCase()
+    if (!roleName || !["superadmin", "admin"].includes(roleName)) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 })
     }
 

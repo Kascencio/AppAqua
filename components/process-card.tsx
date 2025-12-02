@@ -24,12 +24,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 import { calcularEstadoProceso, calcularProgresoProceso, calcularDiasProceso } from "@/types/proceso"
 import { ExtendProcessDialog } from "./extend-process-dialog"
+import type { ProcesoConCalculos } from "@/types/proceso"
 
 interface ProcessCardProps {
-  proceso: any
-  onEdit?: (proceso: any) => void
+  proceso: ProcesoConCalculos
+  onEdit?: (proceso: ProcesoConCalculos) => void
   onDelete?: (id: number) => void
-  onExtend?: (data: any) => void
+  onExtend?: (data: ProcesoConCalculos) => void
 }
 
 export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCardProps) {

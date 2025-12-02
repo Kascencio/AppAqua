@@ -40,6 +40,24 @@ export async function POST(request: NextRequest) {
     if (!body.nombre) {
       return NextResponse.json({ error: "Nombre es requerido" }, { status: 400 })
     }
+
+    // 🔒 VALIDAR DUPLICADOS: Verificar que no exista especie con el mismo nombre
+    const especieExistente = await prisma.especies.findFirst({
+      where: {
+        nombre: body.nombre
+      }
+    })
+
+    if (especieExistente) {
+      return NextResponse.json(
+        { 
+          error: "Ya existe una especie con ese nombre",
+          detalles: `La especie "${body.nombre}" ya está registrada`
+        }, 
+        { status: 409 } // 409 Conflict
+      )
+    }
+
     const created = await prisma.especies.create({ data: { nombre: body.nombre } })
     return NextResponse.json(created, { status: 201 })
   } catch (error) {
@@ -97,10 +115,74 @@ export async function DELETE(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "ID de especie es obligatorio" }, { status: 400 })
     }
-    await prisma.especies.delete({ where: { id_especie: Number(id) } })
-    return NextResponse.json({ message: "Especie eliminada correctamente" })
-  } catch (error) {
+
+    const especieId = Number(id)
+
+    // 🔒 VALIDAR DEPENDENCIAS: Verificar si hay procesos con esta especie
+    const procesosAsociados = await prisma.procesos.findMany({
+      where: {
+        id_especie: especieId,
+        fecha_final: {
+          gte: new Date() // Procesos que aún no han finalizado
+        }
+      },
+      select: {
+        id_proceso: true,
+        fecha_inicio: true,
+        fecha_final: true
+      }
+    })
+
+    if (procesosAsociados.length > 0) {
+      return NextResponse.json(
+        { 
+          error: "No se puede eliminar la especie porque tiene procesos activos asociados",
+          detalles: `Se encontraron ${procesosAsociados.length} proceso(s) activo(s) o futuro(s). Por favor, finalice o elimine estos procesos primero.`,
+          procesos: procesosAsociados
+        }, 
+        { status: 409 } // 409 Conflict
+      )
+    }
+
+    // Verificar todos los procesos (incluso finalizados)
+    const todosProcesos = await prisma.procesos.count({
+      where: { id_especie: especieId }
+    })
+
+    if (todosProcesos > 0) {
+      // Tiene procesos históricos - podríamos avisar o permitir eliminar de todos modos
+      console.warn(`⚠️ Eliminando especie ID ${especieId} que tiene ${todosProcesos} procesos históricos`)
+    }
+
+    // Eliminar parámetros asociados primero (cascade manual)
+    const deletedParams = await prisma.especie_parametro.deleteMany({
+      where: { id_especie: especieId }
+    })
+
+    // Eliminar la especie
+    await prisma.especies.delete({ where: { id_especie: especieId } })
+    
+    return NextResponse.json({ 
+      message: "Especie eliminada correctamente",
+      eliminados: {
+        especie: 1,
+        parametros: deletedParams.count
+      }
+    })
+  } catch (error: any) {
     console.error("Error eliminando especie:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    
+    // Manejar errores específicos de Prisma
+    if (error.code === 'P2003') {
+      return NextResponse.json({ 
+        error: "No se puede eliminar la especie porque tiene registros relacionados",
+        detalles: "Existen procesos u otros datos asociados a esta especie"
+      }, { status: 409 })
+    }
+    
+    return NextResponse.json({ 
+      error: "Error interno del servidor",
+      detalles: process.env.NODE_ENV === 'development' ? error.message : undefined
+    }, { status: 500 })
   }
 }

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
-import { JWTUtils, USER_ROLES } from "@/lib/auth-utils"
+import { JWTUtils } from "@/lib/auth-utils"
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +29,9 @@ export async function POST(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const decoded = JWTUtils.verifyToken(token)
     if (!decoded) return NextResponse.json({ error: "Token inválido" }, { status: 401 })
-    if (![USER_ROLES.SUPERADMIN, USER_ROLES.ADMIN].includes(decoded.id_rol)) {
+    const role = await prisma.tipo_rol.findUnique({ where: { id_rol: decoded.id_rol } })
+    const roleName = role?.nombre?.toLowerCase()
+    if (!roleName || !["superadmin", "admin"].includes(roleName)) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 })
     }
 
@@ -71,7 +73,9 @@ export async function DELETE(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const decoded = JWTUtils.verifyToken(token)
     if (!decoded) return NextResponse.json({ error: "Token inválido" }, { status: 401 })
-    if (decoded.id_rol !== USER_ROLES.SUPERADMIN) {
+    const role = await prisma.tipo_rol.findUnique({ where: { id_rol: decoded.id_rol } })
+    const roleName = role?.nombre?.toLowerCase()
+    if (roleName !== "superadmin") {
       return NextResponse.json({ error: "Solo superadmin puede eliminar sucursales" }, { status: 403 })
     }
 
@@ -97,7 +101,9 @@ export async function PUT(request: NextRequest) {
     if (!token) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const decoded = JWTUtils.verifyToken(token)
     if (!decoded) return NextResponse.json({ error: "Token inválido" }, { status: 401 })
-    if (![USER_ROLES.SUPERADMIN, USER_ROLES.ADMIN].includes(decoded.id_rol)) {
+    const role = await prisma.tipo_rol.findUnique({ where: { id_rol: decoded.id_rol } })
+    const roleName = role?.nombre?.toLowerCase()
+    if (!roleName || !["superadmin", "admin"].includes(roleName)) {
       return NextResponse.json({ error: "No autorizado" }, { status: 403 })
     }
 
@@ -107,8 +113,42 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "ID de sucursal es obligatorio" }, { status: 400 })
     }
     const body = await request.json()
-    await prisma.empresa_sucursal.update({ where: { id_empresa_sucursal: Number(id) }, data: body })
-    return NextResponse.json({ success: true })
+    const {
+      // Campos válidos de la tabla
+      id_padre,
+      nombre,
+      tipo,
+      telefono,
+      email,
+      estado_operativo,
+      fecha_registro,
+      id_estado,
+      id_cp,
+      id_colonia,
+      calle,
+      numero_int_ext,
+      referencia,
+    } = body
+
+    const updated = await prisma.empresa_sucursal.update({
+      where: { id_empresa_sucursal: Number(id) },
+      data: {
+        ...(id_padre !== undefined ? { id_padre: id_padre === null ? null : Number(id_padre) } : {}),
+        ...(nombre !== undefined ? { nombre } : {}),
+        ...(tipo !== undefined ? { tipo } : {}),
+        ...(telefono !== undefined ? { telefono } : {}),
+        ...(email !== undefined ? { email } : {}),
+        ...(estado_operativo !== undefined ? { estado_operativo } : {}),
+        ...(fecha_registro !== undefined ? { fecha_registro: new Date(fecha_registro) } : {}),
+        ...(id_estado !== undefined ? { id_estado: Number(id_estado) } : {}),
+        ...(id_cp !== undefined ? { id_cp: Number(id_cp) } : {}),
+        ...(id_colonia !== undefined ? { id_colonia: Number(id_colonia) } : {}),
+        ...(calle !== undefined ? { calle } : {}),
+        ...(numero_int_ext !== undefined ? { numero_int_ext } : {}),
+        ...(referencia !== undefined ? { referencia } : {}),
+      },
+    })
+    return NextResponse.json(updated)
   } catch (error) {
     console.error("Error actualizando sucursal:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })

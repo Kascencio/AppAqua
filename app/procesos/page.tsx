@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Plus, AlertTriangle, Fish } from "lucide-react"
-import type { ProcesoDetallado, Proceso } from "@/types/proceso"
+import type { Proceso, ProcesoConCalculos } from "@/types/proceso"
 import { GenerateProcessesButton } from "@/components/generate-processes-button"
 
 export default function ProcesosPage() {
@@ -20,9 +20,9 @@ export default function ProcesosPage() {
     useProcesses()
 
   const [showForm, setShowForm] = useState(false)
-  const [editingProcess, setEditingProcess] = useState<ProcesoDetallado | null>(null)
-  const [monitoringProcess, setMonitoringProcess] = useState<ProcesoDetallado | null>(null)
-  const [extendingProcess, setExtendingProcess] = useState<ProcesoDetallado | null>(null)
+  const [editingProcess, setEditingProcess] = useState<ProcesoConCalculos | null>(null)
+  const [monitoringProcess, setMonitoringProcess] = useState<ProcesoConCalculos | null>(null)
+  const [extendingProcess, setExtendingProcess] = useState<ProcesoConCalculos | null>(null)
 
   const handleCreateProcess = async (procesoData: Omit<Proceso, "id_proceso">) => {
     const success = await createProcess(procesoData)
@@ -33,13 +33,13 @@ export default function ProcesosPage() {
     return success
   }
 
-  const handleEditProcess = (process: ProcesoDetallado) => {
+  const handleEditProcess = (process: ProcesoConCalculos) => {
     setEditingProcess(process)
     setShowForm(true)
   }
 
-  const handleDeleteProcess = async (process: ProcesoDetallado) => {
-    if (confirm(`¿Estás seguro de que deseas eliminar el proceso "${process.nombre_proceso}"?`)) {
+  const handleDeleteProcess = async (process: ProcesoConCalculos) => {
+    if (confirm(`¿Estás seguro de que deseas eliminar el proceso "${process.id_proceso}"?`)) {
       const success = await deleteProcess(process.id_proceso)
       if (success) {
         refresh()
@@ -47,18 +47,18 @@ export default function ProcesosPage() {
     }
   }
 
-  const handleStatusChange = async (process: ProcesoDetallado, newStatus: ProcesoDetallado["estado"]) => {
+  const handleStatusChange = async (process: ProcesoConCalculos, newStatus: string) => {
     const success = await updateProcessStatus(process.id_proceso, newStatus || "activo")
     if (success) {
       refresh()
     }
   }
 
-  const handleViewMonitoring = (process: ProcesoDetallado) => {
+  const handleViewMonitoring = (process: ProcesoConCalculos) => {
     setMonitoringProcess(process)
   }
 
-  const handleExtendProcess = (process: ProcesoDetallado) => {
+  const handleExtendProcess = (process: ProcesoConCalculos) => {
     setExtendingProcess(process)
   }
 
@@ -110,7 +110,7 @@ export default function ProcesosPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold">
-              {monitoringProcess.nombre_proceso || `Proceso ${monitoringProcess.id_proceso}`}
+              Proceso {monitoringProcess.id_proceso}
             </h1>
             <p className="text-muted-foreground">Monitoreo en tiempo real</p>
           </div>

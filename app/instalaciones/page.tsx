@@ -15,7 +15,7 @@ import type { Instalacion } from "@/types/instalacion"
 // TODO: Esta página ya está alineada a las interfaces oficiales. Cambiar a fetch real al pasar a producción.
 
 export default function InstalacionesPage() {
-  const { instalaciones, loading, error, deleteInstalacion, addInstalacion } = useInstalaciones()
+  const { instalaciones, loading, error, deleteInstalacion, createInstalacion } = useInstalaciones()
   const [searchTerm, setSearchTerm] = useState("")
   const [filteredInstalaciones, setFilteredInstalaciones] = useState<Instalacion[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -39,7 +39,7 @@ export default function InstalacionesPage() {
 
   const handleAddInstalacion = async (instalacionData: Omit<Instalacion, "id_instalacion">) => {
     try {
-      await addInstalacion(instalacionData)
+      await createInstalacion(instalacionData)
       setIsAddDialogOpen(false)
       toast({
         title: "Éxito",

@@ -38,15 +38,16 @@ export default function AddBranchDialog({ open, onOpenChange, onAddBranch }: Add
     e.preventDefault()
 
     const newBranch: Omit<EmpresaSucursal, "id_empresa_sucursal" | "fecha_registro"> = {
-      id_padre: tipo === "sucursal" ? 1 : null, // Assuming parent company ID is 1
+      id_padre: tipo === "sucursal" ? 1 : null,
       nombre,
       tipo,
       telefono: telefono || null,
       email: email || null,
       estado_operativo: "activa",
-      id_estado: 27, // Tabasco
-      id_cp: 86000, // Default postal code
-      id_colonia: 1, // Default colony
+      // Estos IDs deben existir en tu base; usamos valores seed por defecto
+      id_estado: 1,
+      id_cp: 1,
+      id_colonia: 1,
       calle,
       numero_int_ext: numeroIntExt || null,
       referencia: referencia || null,

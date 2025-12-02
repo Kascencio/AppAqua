@@ -9,8 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { MapComponent } from "@/components/map-component"
-import { useBranches } from "@/hooks/use-branches"
-import type { EmpresaSucursal } from "@/types/empresa-sucursal"
+import { useAppContext } from "@/context/app-context"
+import type { EmpresaSucursalCompleta } from "@/types"
 import {
   Building2,
   Store,
@@ -30,17 +30,17 @@ export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterTipo, setFilterTipo] = useState<"all" | "empresa" | "sucursal">("all")
   const [filterEstado, setFilterEstado] = useState<"all" | "activa" | "inactiva">("all")
-  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaSucursal | null>(null)
+  const [selectedEmpresa, setSelectedEmpresa] = useState<EmpresaSucursalCompleta | null>(null)
   const [showInactivas, setShowInactivas] = useState(true)
 
-  // Queries con React Query
-  const { branches: empresasSucursales = [], loading: isLoading, error, refetch } = useBranches() as any
+  // Usar AppContext
+  const { empresasSucursales, isLoading, error, refreshData } = useAppContext()
   
   // Calcular porEstado
   const porEstado = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const e of empresasSucursales) {
-      const key = (e as any).estado || "Desconocido"
+      const key = e.nombre_estado || "Desconocido"
       counts[key] = (counts[key] || 0) + 1
     }
     return counts
@@ -60,8 +60,8 @@ export default function MapPage() {
     return empresasSucursales.filter((empresa) => {
       const matchesSearch =
         empresa.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (empresa as any).estado?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (empresa as any).colonia?.toLowerCase().includes(searchTerm.toLowerCase())
+        (empresa.nombre_estado?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+        (empresa.nombre_colonia?.toLowerCase() || "").includes(searchTerm.toLowerCase())
 
       const matchesTipo = filterTipo === "all" || empresa.tipo === filterTipo
       const matchesEstado = filterEstado === "all" || empresa.estado_operativo === filterEstado
@@ -73,19 +73,26 @@ export default function MapPage() {
 
   // Preparar datos para el mapa
   const mapData = useMemo(() => {
-    return filteredEmpresas.map((empresa) => ({
-      id: empresa.id_empresa_sucursal.toString(),
-      name: empresa.nombre,
-      type: empresa.tipo,
-      status: empresa.estado_operativo,
-      coordinates: (empresa as any).coordenadas || { lat: 17.9869, lng: -92.9303 },
-      address: `${empresa.calle} ${empresa.numero_int_ext || ""}, ${(empresa as any).colonia || ""}, ${(empresa as any).estado || ""}`,
-      phone: empresa.telefono,
-      email: empresa.email,
-    }))
+    return filteredEmpresas.map((empresa, index) => {
+      // Mock coordinates based on index/id to spread them out
+      // Base center: 17.9869, -92.9303 (Villahermosa roughly)
+      const lat = 17.9869 + (Math.random() - 0.5) * 0.1
+      const lng = -92.9303 + (Math.random() - 0.5) * 0.1
+      
+      return {
+        id: empresa.id_empresa_sucursal.toString(),
+        name: empresa.nombre,
+        type: empresa.tipo,
+        status: empresa.estado_operativo,
+        coordinates: { lat, lng },
+        address: `${empresa.calle} ${empresa.numero_int_ext || ""}, ${empresa.nombre_colonia || ""}, ${empresa.nombre_estado || ""}`,
+        phone: empresa.telefono,
+        email: empresa.email,
+      }
+    })
   }, [filteredEmpresas])
 
-  const handleEmpresaSelect = (empresa: EmpresaSucursal) => {
+  const handleEmpresaSelect = (empresa: EmpresaSucursalCompleta) => {
     setSelectedEmpresa(empresa)
   }
 
@@ -127,13 +134,11 @@ export default function MapPage() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Error al cargar los datos del mapa
-            {refetch && (
-              <Button variant="outline" size="sm" onClick={() => refetch()} className="ml-2">
-                <RefreshCw className="h-4 w-4 mr-1" />
-                Reintentar
-              </Button>
-            )}
+            Error al cargar los datos del mapa: {error}
+            <Button variant="outline" size="sm" onClick={() => refreshData()} className="ml-2">
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Reintentar
+            </Button>
           </AlertDescription>
         </Alert>
       </div>
@@ -252,17 +257,15 @@ export default function MapPage() {
               {showInactivas ? "Ocultar inactivas" : "Mostrar inactivas"}
             </Button>
 
-            {refetch && (
-              <Button
-                variant="outline"
-                onClick={() => refetch()}
-                disabled={false}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${false ? "animate-spin" : ""}`} />
-                Actualizar
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              onClick={() => refreshData()}
+              disabled={isLoading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              Actualizar
+            </Button>
           </div>
 
           <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -334,7 +337,7 @@ export default function MapPage() {
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
                     <span>
-                      {selectedEmpresa.calle} {selectedEmpresa.numero_int_ext}, {(selectedEmpresa as any).colonia}
+                      {selectedEmpresa.calle} {selectedEmpresa.numero_int_ext}, {selectedEmpresa.nombre_colonia}, {selectedEmpresa.nombre_estado}
                     </span>
                   </div>
 
@@ -357,10 +360,10 @@ export default function MapPage() {
                     <span>Registrada: {new Date(selectedEmpresa.fecha_registro).toLocaleDateString()}</span>
                   </div>
 
-                  {(selectedEmpresa as any).padre && (
+                  {selectedEmpresa.padre && (
                     <div className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <span>Empresa matriz: {(selectedEmpresa as any).padre}</span>
+                      <span>Empresa matriz: {selectedEmpresa.padre}</span>
                     </div>
                   )}
 
@@ -412,7 +415,7 @@ export default function MapPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{empresa.nombre}</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {(empresa as any).colonia}, {(empresa as any).estado}
+                          {empresa.nombre_colonia}, {empresa.nombre_estado}
                         </p>
                       </div>
                       <Badge

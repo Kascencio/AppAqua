@@ -160,7 +160,7 @@ export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProp
                 <SelectContent>
                   {especies.map((especie) => (
                     <SelectItem key={especie.id_especie} value={especie.id_especie.toString()}>
-                      {especie.nombre_especie}
+                      {especie.nombre}
                     </SelectItem>
                   ))}
                 </SelectContent>

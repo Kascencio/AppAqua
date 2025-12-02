@@ -8,50 +8,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model alertas {
-  id_alertas          Int              @id @default(autoincrement())
-  id_instalacion      Int
-  id_sensor_instalado Int
-  descripcion         String           @db.VarChar(100)
-  dato_puntual        Decimal          @db.Decimal(10, 2)
-  instalacion         instalacion      @relation(fields: [id_instalacion], references: [id_instalacion], onUpdate: Restrict, map: "alertas_ibfk_1")
-  sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "alertas_ibfk_2")
-
-  @@index([id_instalacion], map: "id_instalacion")
-  @@index([id_sensor_instalado], map: "id_sensor_instalado")
+model estados {
+  id_estado                 Int                       @id @default(autoincrement())
+  nombre_estado             String                    @db.VarChar(45)
+  empresa_sucursal          empresa_sucursal[]
+  municipios                municipios[]
+  organizacion              organizacion[]
+  organizacion_sucursal     organizacion_sucursal[]
 }
 
-model asignacion_usuario {
-  id_asignacion       Int               @id @default(autoincrement())
-  id_usuario          Int
-  id_empresa_sucursal Int?
-  id_instalacion      Int?
-  fecha_asignacion    DateTime          @default(now()) @db.DateTime(0)
-  instalacion         instalacion?      @relation(fields: [id_instalacion], references: [id_instalacion], onDelete: Restrict, onUpdate: Restrict, map: "fk_au_instalacion")
-  empresa_sucursal    empresa_sucursal? @relation(fields: [id_empresa_sucursal], references: [id_empresa_sucursal], onDelete: Restrict, onUpdate: Restrict, map: "fk_au_sucursal")
-  usuario             usuario           @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_au_usuario")
+model municipios {
+  id_municipio              Int                       @id @default(autoincrement())
+  id_estado                 Int
+  nombre_municipio          String                    @db.VarChar(45)
+  codigos_postales          codigos_postales[]
+  estados                   estados                   @relation(fields: [id_estado], references: [id_estado], onUpdate: Restrict, map: "fk_mun_estado")
+  organizacion              organizacion[]
+  organizacion_sucursal     organizacion_sucursal[]
 
-  @@unique([id_usuario, id_empresa_sucursal, id_instalacion], map: "uq_usuario_emp_inst")
-  @@index([id_instalacion], map: "fk_au_instalacion")
-  @@index([id_empresa_sucursal], map: "fk_au_sucursal")
-}
-
-model catalogo_sensores {
-  id_sensor        Int                @id @default(autoincrement())
-  modelo           String?            @db.VarChar(45)
-  marca            String?            @db.VarChar(45)
-  rango_medicion   String?            @db.VarChar(45)
-  unidad_medida    String?            @db.VarChar(45)
-  sensor           String             @db.VarChar(45)
-  descripcion      String             @db.VarChar(500)
-  sensor_instalado sensor_instalado[]
+  @@index([id_estado], map: "id_estado")
 }
 
 model codigos_postales {
   id_cp            Int                @id @default(autoincrement())
   id_municipio     Int
   codigo_postal    String             @db.VarChar(10)
-  municipios       municipios         @relation(fields: [id_municipio], references: [id_municipio], onUpdate: Restrict, map: "codigos_postales_ibfk_1")
+  municipios       municipios         @relation(fields: [id_municipio], references: [id_municipio], onUpdate: Restrict, map: "fk_cp_municipio")
   colonias         colonias[]
   empresa_sucursal empresa_sucursal[]
 
@@ -62,7 +44,7 @@ model colonias {
   id_colonia       Int                @id @default(autoincrement())
   id_cp            Int
   nombre_colonia   String             @db.VarChar(100)
-  codigos_postales codigos_postales   @relation(fields: [id_cp], references: [id_cp], onUpdate: Restrict, map: "colonias_ibfk_1")
+  codigos_postales codigos_postales   @relation(fields: [id_cp], references: [id_cp], onUpdate: Restrict, map: "fk_col_cp")
   empresa_sucursal empresa_sucursal[]
 
   @@index([id_cp], map: "id_cp")
@@ -86,9 +68,9 @@ model empresa_sucursal {
   asignacion_usuario     asignacion_usuario[]
   empresa_sucursal       empresa_sucursal?                 @relation("empresa_sucursalToempresa_sucursal", fields: [id_padre], references: [id_empresa_sucursal], onDelete: Restrict, onUpdate: Restrict, map: "empresa_sucursal_ibfk_1")
   other_empresa_sucursal empresa_sucursal[]                @relation("empresa_sucursalToempresa_sucursal")
-  estados                estados                           @relation(fields: [id_estado], references: [id_estado], onUpdate: Restrict, map: "empresa_sucursal_ibfk_2")
+  estados                estados                           @relation(fields: [id_estado], references: [id_estado], onUpdate: Restrict, map: "fk_emp_suc_estado")
   codigos_postales       codigos_postales                  @relation(fields: [id_cp], references: [id_cp], onUpdate: Restrict, map: "empresa_sucursal_ibfk_3")
-  colonias               colonias                          @relation(fields: [id_colonia], references: [id_colonia], onUpdate: Restrict, map: "empresa_sucursal_ibfk_4")
+  colonias               colonias                          @relation(fields: [id_colonia], references: [id_colonia], onUpdate: Restrict, map: "fk_emp_suc_col")
   instalacion            instalacion[]
 
   @@index([id_colonia], map: "id_colonia")
@@ -97,31 +79,51 @@ model empresa_sucursal {
   @@index([id_padre], map: "id_padre")
 }
 
-model especie_parametro {
-  id_especie_parametro Int        @id @default(autoincrement())
-  id_especie           Int
-  id_parametro         Int
-  Rmax                 Float      @db.Float
-  Rmin                 Float      @db.Float
-  especies             especies   @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "especie_parametro_ibfk_1")
-  parametros           parametros @relation(fields: [id_parametro], references: [id_parametro], onUpdate: Restrict, map: "especie_parametro_ibfk_2")
-
-  @@index([id_especie], map: "id_especie")
-  @@index([id_parametro], map: "id_parametro")
+model tipo_rol {
+  id_rol  Int       @id @default(autoincrement())
+  nombre  String    @unique(map: "uq_nombre_rol") @db.VarChar(50)
+  usuario usuario[]
 }
 
-model especies {
-  id_especie        Int                 @id @default(autoincrement())
-  nombre            String              @db.VarChar(100)
-  especie_parametro especie_parametro[]
-  procesos          procesos[]
+model usuario {
+  id_usuario         Int                  @id @default(autoincrement())
+  id_rol             Int
+  nombre_completo    String               @db.VarChar(100)
+  correo             String               @unique(map: "uq_usuario_correo") @db.VarChar(100)
+  telefono           String?              @db.VarChar(20)
+  password_hash      String               @db.Char(60)
+  estado             usuario_estado       @default(activo)
+  fecha_creacion     DateTime             @default(now()) @db.DateTime(0)
+  asignacion_usuario asignacion_usuario[]
+  token_recuperacion token_recuperacion[]
+  tipo_rol           tipo_rol             @relation(fields: [id_rol], references: [id_rol], onUpdate: Restrict, map: "fk_usuario_rol")
+
+  @@index([id_rol], map: "fk_usuario_rol")
 }
 
-model estados {
-  id_estado        Int                @id @default(autoincrement())
-  nombre_estado    String             @db.VarChar(45)
-  empresa_sucursal empresa_sucursal[]
-  municipios       municipios[]
+model asignacion_usuario {
+  id_asignacion       Int               @id @default(autoincrement())
+  id_usuario          Int
+  id_empresa_sucursal Int?
+  id_instalacion      Int?
+  fecha_asignacion    DateTime          @default(now()) @db.DateTime(0)
+  instalacion         instalacion?      @relation(fields: [id_instalacion], references: [id_instalacion], onDelete: Restrict, onUpdate: Restrict, map: "fk_asig_instalacion")
+  empresa_sucursal    empresa_sucursal? @relation(fields: [id_empresa_sucursal], references: [id_empresa_sucursal], onDelete: Restrict, onUpdate: Restrict, map: "fk_asig_sucursal")
+  usuario             usuario           @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_asig_usuario")
+
+  @@unique([id_usuario, id_empresa_sucursal, id_instalacion], map: "uq_usuario_emp_inst")
+  @@index([id_instalacion], map: "fk_au_instalacion")
+  @@index([id_empresa_sucursal], map: "fk_au_sucursal")
+}
+
+model token_recuperacion {
+  id_token   Int      @id @default(autoincrement())
+  id_usuario Int
+  token      String   @unique(map: "uq_token") @db.Char(64)
+  expiracion DateTime @db.DateTime(0)
+  usuario    usuario  @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_tok_usuario")
+
+  @@index([id_usuario], map: "fk_tr_usuario")
 }
 
 model instalacion {
@@ -135,7 +137,7 @@ model instalacion {
   id_proceso          Int
   alertas             alertas[]
   asignacion_usuario  asignacion_usuario[]
-  empresa_sucursal    empresa_sucursal             @relation(fields: [id_empresa_sucursal], references: [id_empresa_sucursal], onUpdate: Restrict, map: "instalacion_ibfk_1")
+  empresa_sucursal    empresa_sucursal             @relation(fields: [id_empresa_sucursal], references: [id_empresa_sucursal], onUpdate: Restrict, map: "fk_ins_sucursal")
   procesos            procesos                     @relation(fields: [id_proceso], references: [id_proceso], onUpdate: Restrict, map: "instalacion_ibfk_2")
   sensor_instalado    sensor_instalado[]
 
@@ -143,29 +145,48 @@ model instalacion {
   @@index([id_proceso], map: "id_proceso")
 }
 
-model lectura {
-  id_lectura                                                     Int                @id @default(autoincrement())
-  id_sensor_instalado                                            Int
-  valor                                                          Decimal            @db.Decimal(10, 2)
-  fecha                                                          DateTime           @db.Date
-  hora                                                           DateTime           @db.Time(0)
-  sensor_instalado_lectura_id_sensor_instaladoTosensor_instalado sensor_instalado   @relation("lectura_id_sensor_instaladoTosensor_instalado", fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "lectura_ibfk_1")
-  sensor_instalado_sensor_instalado_id_lecturaTolectura          sensor_instalado[] @relation("sensor_instalado_id_lecturaTolectura")
-
-  @@index([id_sensor_instalado], map: "id_sensor_instalado")
-  @@index([fecha], map: "idx_lectura_fecha")
-  @@index([id_sensor_instalado], map: "idx_lectura_id_sensor_instalado")
-  @@index([id_sensor_instalado, fecha], map: "idx_lectura_sensor_fecha")
+model catalogo_sensores {
+  id_sensor        Int                @id @default(autoincrement())
+  modelo           String?            @db.VarChar(45)
+  marca            String?            @db.VarChar(45)
+  rango_medicion   String?            @db.VarChar(45)
+  unidad_medida    String?            @db.VarChar(45)
+  sensor           String             @db.VarChar(45)
+  descripcion      String             @db.VarChar(500)
+  sensor_instalado sensor_instalado[]
 }
 
-model municipios {
-  id_municipio     Int                @id @default(autoincrement())
-  id_estado        Int
-  nombre_municipio String             @db.VarChar(45)
-  codigos_postales codigos_postales[]
-  estados          estados            @relation(fields: [id_estado], references: [id_estado], onUpdate: Restrict, map: "municipios_ibfk_1")
+model sensor_instalado {
+  id_sensor_instalado                          Int                       @id @default(autoincrement())
+  id_instalacion                               Int
+  id_sensor                                    Int
+  fecha_instalada                              DateTime                  @db.Date
+  descripcion                                  String                    @db.VarChar(50)
+  id_lectura                                   Int?
+  alertas                                      alertas[]
+  lectura                                      lectura[]
+  promedio                                     promedio[]
+  resumen_lectura_horaria                      resumen_lectura_horaria[]
+  instalacion                                  instalacion               @relation(fields: [id_instalacion], references: [id_instalacion], onUpdate: Restrict, map: "fk_si_instalacion")
+  catalogo_sensores                            catalogo_sensores         @relation(fields: [id_sensor], references: [id_sensor], onUpdate: Restrict, map: "fk_si_sensor")
+  lectura_sensor_instalado_id_lecturaTolectura lectura?                  @relation("sensor_instalado_id_lecturaTolectura", fields: [id_lectura], references: [id_lectura], onDelete: Restrict, onUpdate: Restrict, map: "sensor_instalado_ibfk_3")
 
-  @@index([id_estado], map: "id_estado")
+  @@index([id_instalacion], map: "id_instalacion")
+  @@index([id_lectura], map: "id_lectura")
+  @@index([id_sensor], map: "id_sensor")
+}
+
+model alertas {
+  id_alertas          Int              @id @default(autoincrement())
+  id_instalacion      Int
+  id_sensor_instalado Int
+  descripcion         String           @db.VarChar(100)
+  dato_puntual        Decimal          @db.Decimal(10, 2)
+  instalacion         instalacion      @relation(fields: [id_instalacion], references: [id_instalacion], onUpdate: Restrict, map: "fk_alerta_instalacion")
+  sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "alertas_ibfk_2")
+
+  @@index([id_instalacion], map: "id_instalacion")
+  @@index([id_sensor_instalado], map: "id_sensor_instalado")
 }
 
 model parametros {
@@ -175,15 +196,50 @@ model parametros {
   especie_parametro especie_parametro[]
 }
 
+model especies {
+  id_especie        Int                 @id @default(autoincrement())
+  nombre            String              @db.VarChar(100)
+  especie_parametro especie_parametro[]
+  procesos          procesos[]
+}
+
+model especie_parametro {
+  id_especie_parametro Int        @id @default(autoincrement())
+  id_especie           Int
+  id_parametro         Int
+  Rmax                 Float      @db.Float
+  Rmin                 Float      @db.Float
+  especies             especies   @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "fk_esparam_especie")
+  parametros           parametros @relation(fields: [id_parametro], references: [id_parametro], onUpdate: Restrict, map: "fk_esparam_param")
+
+  @@index([id_especie], map: "id_especie")
+  @@index([id_parametro], map: "id_parametro")
+}
+
 model procesos {
   id_proceso   Int           @id @default(autoincrement())
   id_especie   Int
   fecha_inicio DateTime      @db.Date
   fecha_final  DateTime      @db.Date
   instalacion  instalacion[]
-  especies     especies      @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "procesos_ibfk_1")
+  especies     especies      @relation(fields: [id_especie], references: [id_especie], onUpdate: Restrict, map: "fk_proc_especie")
 
   @@index([id_especie], map: "id_especie")
+}
+
+model lectura {
+  id_lectura                                            Int                @id @default(autoincrement())
+  id_sensor_instalado                                   Int
+  valor                                                 Decimal            @db.Decimal(10, 2)
+  fecha                                                 DateTime           @db.Date
+  hora                                                  DateTime           @db.Time(0)
+  sensor_instalado                                      sensor_instalado   @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "fk_lectura_sensor_instalado")
+  sensor_instalado_sensor_instalado_id_lecturaTolectura sensor_instalado[] @relation("sensor_instalado_id_lecturaTolectura")
+
+  @@index([id_sensor_instalado, fecha], map: "idx_lectura_sensor_fecha")
+  @@index([fecha], map: "idx_lectura_fecha")
+  @@index([id_sensor_instalado], map: "id_sensor_instalado")
+  @@index([id_sensor_instalado], map: "idx_lectura_id_sensor_instalado")
 }
 
 model promedio {
@@ -207,58 +263,6 @@ model resumen_lectura_horaria {
   sensor_instalado    sensor_instalado @relation(fields: [id_sensor_instalado], references: [id_sensor_instalado], onUpdate: Restrict, map: "resumen_lectura_horaria_ibfk_1")
 
   @@unique([id_sensor_instalado, fecha, hora], map: "uq_sensor_fecha_hora")
-}
-
-model sensor_instalado {
-  id_sensor_instalado                                   Int                       @id @default(autoincrement())
-  id_instalacion                                        Int
-  id_sensor                                             Int
-  fecha_instalada                                       DateTime                  @db.Date
-  descripcion                                           String                    @db.VarChar(50)
-  id_lectura                                            Int?
-  alertas                                               alertas[]
-  lectura_lectura_id_sensor_instaladoTosensor_instalado lectura[]                 @relation("lectura_id_sensor_instaladoTosensor_instalado")
-  promedio                                              promedio[]
-  resumen_lectura_horaria                               resumen_lectura_horaria[]
-  instalacion                                           instalacion               @relation(fields: [id_instalacion], references: [id_instalacion], onUpdate: Restrict, map: "sensor_instalado_ibfk_1")
-  catalogo_sensores                                     catalogo_sensores         @relation(fields: [id_sensor], references: [id_sensor], onUpdate: Restrict, map: "sensor_instalado_ibfk_2")
-  lectura_sensor_instalado_id_lecturaTolectura          lectura?                  @relation("sensor_instalado_id_lecturaTolectura", fields: [id_lectura], references: [id_lectura], onDelete: Restrict, onUpdate: Restrict, map: "sensor_instalado_ibfk_3")
-
-  @@index([id_instalacion], map: "id_instalacion")
-  @@index([id_lectura], map: "id_lectura")
-  @@index([id_sensor], map: "id_sensor")
-}
-
-model tipo_rol {
-  id_rol  Int       @id @default(autoincrement())
-  nombre  String    @unique(map: "uq_nombre_rol") @db.VarChar(50)
-  usuario usuario[]
-}
-
-model token_recuperacion {
-  id_token   Int      @id @default(autoincrement())
-  id_usuario Int
-  token      String   @unique(map: "uq_token") @db.Char(64)
-  expiracion DateTime @db.DateTime(0)
-  usuario    usuario  @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_tr_usuario")
-
-  @@index([id_usuario], map: "fk_tr_usuario")
-}
-
-model usuario {
-  id_usuario         Int                  @id @default(autoincrement())
-  id_rol             Int
-  nombre_completo    String               @db.VarChar(100)
-  correo             String               @unique(map: "uq_usuario_correo") @db.VarChar(100)
-  telefono           String?              @db.VarChar(20)
-  password_hash      String               @db.Char(60)
-  estado             usuario_estado       @default(activo)
-  fecha_creacion     DateTime             @default(now()) @db.DateTime(0)
-  asignacion_usuario asignacion_usuario[]
-  token_recuperacion token_recuperacion[]
-  tipo_rol           tipo_rol             @relation(fields: [id_rol], references: [id_rol], onUpdate: Restrict, map: "fk_usuario_rol")
-
-  @@index([id_rol], map: "fk_usuario_rol")
 }
 
 enum empresa_sucursal_tipo {
@@ -285,4 +289,62 @@ enum instalacion_tipo_uso {
 enum usuario_estado {
   activo
   inactivo
+}
+
+// =========================================================
+// ORGANIZACIONES (NEW MODELS)
+// =========================================================
+
+model organizacion {
+  id_organizacion           Int                     @id @default(autoincrement())
+  nombre                    String                  @db.VarChar(100)
+  razon_social              String?                 @db.VarChar(255)
+  rfc                       String?                 @db.VarChar(13)
+  correo                    String?                 @db.VarChar(255)
+  telefono                  String?                 @db.VarChar(15)
+  direccion                 String?                 @db.Text
+  id_estado                 Int?
+  id_municipio              Int?
+  estado                    organizacion_estado     @default(activa)
+  descripcion               String?                 @db.Text
+  fecha_creacion            DateTime                @default(now()) @db.Timestamp(0)
+  ultima_modificacion       DateTime                @default(now()) @updatedAt @db.Timestamp(0)
+
+  // Relationships
+  estados                   estados?                @relation(fields: [id_estado], references: [id_estado], onUpdate: Restrict)
+  municipios                municipios?             @relation(fields: [id_municipio], references: [id_municipio], onUpdate: Restrict)
+  organizacion_sucursal     organizacion_sucursal[]
+
+  @@index([id_estado], map: "idx_organizacion_estado")
+  @@index([id_municipio], map: "idx_organizacion_municipio")
+  @@index([rfc], map: "idx_organizacion_rfc")
+  @@index([correo], map: "idx_organizacion_correo")
+}
+
+model organizacion_sucursal {
+  id_organizacion_sucursal  Int                     @id @default(autoincrement())
+  id_organizacion           Int
+  nombre_sucursal           String                  @db.VarChar(100)
+  direccion_sucursal        String?                 @db.Text
+  telefono_sucursal         String?                 @db.VarChar(15)
+  correo_sucursal           String?                 @db.VarChar(255)
+  id_estado                 Int?
+  id_municipio              Int?
+  estado                    organizacion_estado     @default(activa)
+  fecha_creacion            DateTime                @default(now()) @db.Timestamp(0)
+  ultima_modificacion       DateTime                @default(now()) @updatedAt @db.Timestamp(0)
+
+  // Relationships
+  organizacion              organizacion            @relation(fields: [id_organizacion], references: [id_organizacion], onDelete: Cascade, onUpdate: Restrict)
+  estados                   estados?                @relation(fields: [id_estado], references: [id_estado], onUpdate: Restrict)
+  municipios                municipios?             @relation(fields: [id_municipio], references: [id_municipio], onUpdate: Restrict)
+
+  @@index([id_organizacion], map: "idx_organizacion_sucursal_org")
+  @@index([id_estado], map: "idx_organizacion_sucursal_estado")
+  @@index([id_municipio], map: "idx_organizacion_sucursal_municipio")
+}
+
+enum organizacion_estado {
+  activa
+  inactiva
 }

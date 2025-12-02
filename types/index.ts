@@ -53,6 +53,7 @@ export interface Especie {
 export interface Proceso {
   id_proceso: number
   id_especie: number // FK NOT NULL
+  id_instalacion: number // FK NOT NULL
   fecha_inicio: string // DATE NOT NULL (ISO string format)
   fecha_final: string // DATE NOT NULL (ISO string format)
 }
@@ -94,6 +95,13 @@ export interface Alerta {
   id_sensor_instalado: number // FK NOT NULL
   descripcion: string // VARCHAR(100) NOT NULL
   dato_puntual: number // DECIMAL(10,2) NOT NULL
+  // UI fields
+  read?: boolean
+  fecha?: string
+  tipo_alerta?: string
+  estado_alerta?: string
+  title?: string
+  parameter?: string
 }
 
 // Tabla: parametros
@@ -263,60 +271,36 @@ export const isValidTipoUsoInstalacion = (tipo: string): tipo is (typeof TIPOS_U
 /**
  * @deprecated Usar EmpresaSucursal en su lugar
  */
-export interface Branch extends EmpresaSucursal {}
+export interface Branch extends EmpresaSucursal { }
 
 /**
  * @deprecated Usar Instalacion en su lugar
  */
-export interface Facility extends Instalacion {}
+export interface Facility extends Instalacion { }
 
 /**
  * @deprecated Usar SensorInstalado en su lugar
  */
-export interface Sensor extends SensorInstalado {}
+export interface Sensor extends SensorInstalado { }
 
 /**
  * @deprecated Usar Especie en su lugar
  */
-export interface Species extends Especie {}
+export interface Species extends Especie { }
 
 /**
  * @deprecated Usar Alerta en su lugar
  */
-export interface Alert extends Alerta {}
+export interface Alert extends Alerta { }
 
 // ============================================================================
 // EXPORTACIONES PRINCIPALES
 // ============================================================================
+// (Las interfaces ya se exportan directamente en su definición)
 
-// Entidades principales (alineadas con sonda.sql)
-export type {
-  EmpresaSucursal,
-  Instalacion,
-  Especie,
-  Proceso,
-  CatalogoSensor,
-  SensorInstalado,
-  Lectura,
-  Alerta,
-  Parametro,
-  EspecieParametro,
+
+export interface ProcesoDetallado extends Proceso {
+  nombre_especie?: string
+  estado_proceso?: "activo" | "finalizado"
+  dias_transcurridos?: number
 }
-
-// Tipos geográficos
-export type { Estado, Municipio, CodigoPostal, Colonia }
-
-// Tipos extendidos
-export type {
-  EmpresaSucursalCompleta,
-  InstalacionCompleta,
-  SensorInstaladoCompleto,
-  LecturaPorProceso,
-  ParametroMonitoreo,
-  DashboardStats,
-  FiltroFecha,
-  User,
-}
-
-// Tipos legacy (deprecated)
-export type { Branch, Facility, Sensor, Species, Alert }

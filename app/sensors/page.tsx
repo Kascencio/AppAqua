@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
+import { useWebSocket } from "@/hooks/use-websocket"
+import { Wifi, WifiOff } from "lucide-react"
 import {
   Search,
   RefreshCw,
@@ -703,9 +705,25 @@ const SimpleSensorCard = ({
   onEdit: (sensor: any) => void
   onDelete: (sensor: any) => void
 }) => {
+  const [realtimeValue, setRealtimeValue] = useState<number | null>(null)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  
+  // WebSocket para actualizaciones en tiempo real
+  const { isConnected } = useWebSocket({
+    sensorId: sensor.id_sensor_instalado || sensor.id,
+    enabled: sensor.status === "active",
+    onMessage: (message) => {
+      if (message.sensorId === String(sensor.id_sensor_instalado || sensor.id) && message.value !== undefined) {
+        setRealtimeValue(message.value)
+        setLastUpdate(new Date())
+      }
+    },
+  })
+
   const gaugeData = useMemo(() => {
     const cfg = getSensorConfig(sensor.type || "other")
-    const current = typeof sensor.lastReading === 'number' ? sensor.lastReading : cfg.optimalMin
+    // Usar valor en tiempo real si está disponible, sino usar lastReading o valor por defecto
+    const current = realtimeValue !== null ? realtimeValue : (typeof sensor.lastReading === 'number' ? sensor.lastReading : cfg.optimalMin)
     return {
       currentValue: current,
       minRange: cfg.minRange,
@@ -716,7 +734,7 @@ const SimpleSensorCard = ({
       name: sensor.name || cfg.name,
       color: cfg.color,
     }
-  }, [sensor])
+  }, [sensor, realtimeValue])
   const isActive = sensor.status === "active"
 
   // Get status info
@@ -772,7 +790,15 @@ const SimpleSensorCard = ({
         {/* Header compacto */}
         <div className="flex justify-between items-center">
           <div className="flex-1">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate">{gaugeData.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate">{gaugeData.name}</h3>
+              {isActive && isConnected && (
+                <div className="flex items-center gap-1">
+                  <Wifi className="h-3 w-3 text-green-500" />
+                  <span className="text-xs text-green-600">En vivo</span>
+                </div>
+              )}
+            </div>
             <p className="text-xs text-gray-500 font-mono">ID: {sensor.id_sensor_instalado || "N/A"}</p>
           </div>
           <button
@@ -849,7 +875,7 @@ const SimpleSensorCard = ({
           <div className="flex justify-between items-center">
             <span className="text-gray-600 dark:text-gray-400">Última actualización:</span>
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              {isActive ? `Hace ${Math.floor(Math.random() * 30) + 1}s` : "Inactivo"}
+              {isActive && lastUpdate ? lastUpdate.toLocaleTimeString() : isActive ? "Esperando datos..." : "Inactivo"}
             </span>
           </div>
         </div>
@@ -885,9 +911,35 @@ const AdvancedSensorCard = ({
   onEdit: (sensor: any) => void
   onDelete: (sensor: any) => void
 }) => {
-  const [gaugeData] = useState(() => generateSensorGaugeData(sensor))
+  const [realtimeValue, setRealtimeValue] = useState<number | null>(null)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  
+  // WebSocket para actualizaciones en tiempo real
+  const { isConnected } = useWebSocket({
+    sensorId: sensor.id_sensor_instalado || sensor.id,
+    enabled: sensor.status === "active",
+    onMessage: (message) => {
+      if (message.sensorId === String(sensor.id_sensor_instalado || sensor.id) && message.value !== undefined) {
+        setRealtimeValue(message.value)
+        setLastUpdate(new Date())
+      }
+    },
+  })
+
+  const initialGaugeData = useMemo(() => generateSensorGaugeData(sensor), [sensor])
+  const [gaugeData, setGaugeData] = useState(initialGaugeData)
   const [isExpanded, setIsExpanded] = useState(false)
   const isActive = sensor.status === "active"
+  
+  // Actualizar gaugeData cuando cambia el valor en tiempo real
+  useEffect(() => {
+    if (realtimeValue !== null) {
+      setGaugeData(prev => ({
+        ...prev,
+        currentValue: realtimeValue,
+      }))
+    }
+  }, [realtimeValue])
 
   // Get status info
   const getStatusInfo = useCallback((currentValue: number, optimalMin: number, optimalMax: number) => {

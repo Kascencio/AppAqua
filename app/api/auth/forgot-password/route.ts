@@ -5,6 +5,7 @@ import {
   RecoveryTokenUtils, 
   SecurityLogger 
 } from '@/lib/auth-utils'
+import { sendTelegramMessage, buildRecoveryMessage } from '@/lib/telegram'
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,6 +47,16 @@ export async function POST(request: NextRequest) {
 
       console.log(`[RECOVERY] Token para ${correo}: ${recoveryToken}`)
       console.log(`[RECOVERY] Expira: ${expirationDate}`)
+
+      // Enviar via Telegram (silencioso, no bloquea la respuesta)
+      const tgMessage = buildRecoveryMessage({ correo, token: recoveryToken })
+      sendTelegramMessage(tgMessage).then((res) => {
+        if (!res.ok) {
+          console.warn('[RECOVERY][TELEGRAM] Error enviando mensaje:', res.error)
+        }
+      }).catch((e) => {
+        console.warn('[RECOVERY][TELEGRAM] Excepción enviando mensaje:', e)
+      })
 
       const clientIP = request.headers.get('x-forwarded-for') || 
                       request.headers.get('x-real-ip') || 

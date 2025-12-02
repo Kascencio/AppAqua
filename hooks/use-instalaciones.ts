@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import type { Instalacion, InstalacionCompleta } from "@/types"
+import { api } from "@/lib/api"
 
 interface UseInstalacionesReturn {
   instalaciones: InstalacionCompleta[]
@@ -26,11 +27,24 @@ export function useInstalaciones(): UseInstalacionesReturn {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch("/api/instalaciones")
-      if (!response.ok) throw new Error("Error al cargar instalaciones")
-      const data = await response.json()
-      setInstalaciones(data)
-      setInstalacionesRaw(data)
+      const data = await api.get<any[]>("/instalaciones")
+
+      // Map if necessary, similar to AppContext
+      const mapped: InstalacionCompleta[] = data.map((inst: any) => ({
+        id_instalacion: inst.id_instalacion,
+        id_empresa_sucursal: inst.id_empresa_sucursal || inst.id_organizacion_sucursal || 0,
+        nombre_instalacion: inst.nombre_instalacion,
+        fecha_instalacion: inst.fecha_instalacion,
+        estado_operativo: inst.estado_operativo === "activo" ? "activo" : "inactivo",
+        descripcion: inst.descripcion,
+        tipo_uso: inst.tipo_uso,
+        id_proceso: inst.id_proceso,
+        // We can't easily get helper fields here without fetching orgs/species/processes
+        // For now, leave them undefined or fetch them if needed
+      }))
+
+      setInstalaciones(mapped)
+      setInstalacionesRaw(mapped)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar instalaciones")
     } finally {
@@ -46,15 +60,11 @@ export function useInstalaciones(): UseInstalacionesReturn {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch("/api/instalaciones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(instalacionData),
-      })
-      if (!response.ok) throw new Error("Error al crear instalación")
+      await api.post("/instalaciones", instalacionData)
       await refreshInstalaciones()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al crear instalación")
+      throw err
     } finally {
       setLoading(false)
     }
@@ -64,15 +74,11 @@ export function useInstalaciones(): UseInstalacionesReturn {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/api/instalaciones/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      })
-      if (!response.ok) throw new Error("Error al actualizar instalación")
+      await api.put(`/instalaciones/${id}`, updates)
       await refreshInstalaciones()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al actualizar instalación")
+      throw err
     } finally {
       setLoading(false)
     }
@@ -82,13 +88,11 @@ export function useInstalaciones(): UseInstalacionesReturn {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/api/instalaciones/${id}`, {
-        method: "DELETE",
-      })
-      if (!response.ok) throw new Error("Error al eliminar instalación")
+      await api.delete(`/instalaciones/${id}`)
       await refreshInstalaciones()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al eliminar instalación")
+      throw err
     } finally {
       setLoading(false)
     }

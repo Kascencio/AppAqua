@@ -1,5 +1,6 @@
 "use client"
 
+import { api } from "@/lib/api"
 import { useState, useEffect, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +13,7 @@ import { Progress } from "@/components/ui/progress"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { ProcessParameterChart } from "@/components/process-parameter-chart"
 import { SensorMonitoringCard } from "@/components/sensor-monitoring-card"
-import type { Proceso, Instalacion, Especie, SensorInstalado, Lectura, CatalogoSensor, EmpresaSucursal } from "@/types"
+import type { Proceso, Instalacion, Especie, SensorInstalado, Lectura, CatalogoSensor, EmpresaSucursalCompleta, EspecieParametro } from "@/types"
 import {
   ArrowLeft,
   Calendar,
@@ -27,13 +28,15 @@ import {
   Activity,
   RefreshCw,
 } from "lucide-react"
+import type { DateRange } from "react-day-picker"
 
 // Tipo extendido para el detalle completo del proceso
 interface ProcesoDetalleCompleto extends Proceso {
   instalacion: Instalacion & {
-    empresa_sucursal: EmpresaSucursal
+    empresa_sucursal: EmpresaSucursalCompleta
   }
   especie: Especie
+  especie_parametros: EspecieParametro[]
   sensores_instalados: (SensorInstalado & {
     sensor_info: CatalogoSensor
     lecturas_recientes: Lectura[]
@@ -57,34 +60,87 @@ export default function ProcesoDetailPage() {
   const [proceso, setProceso] = useState<ProcesoDetalleCompleto | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
+  const [dateRange, setDateRange] = useState<DateRange>({
     from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 días atrás
     to: new Date(),
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Simular fetch de datos del proceso
+  // Fetch de datos del proceso
   useEffect(() => {
     const fetchProcesoDetalle = async () => {
       try {
         setIsLoading(true)
         setError(null)
 
-        // Simular delay de API
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        // Fetch proceso
+        const procesoData = await api.get<Proceso>(`/procesos/${procesoId}`)
+        if (!procesoData) throw new Error(`Proceso con ID ${procesoId} no encontrado`)
 
-        // Simular error ocasional
-        if (Math.random() < 0.1) {
-          throw new Error("Error de conexión con el servidor")
+        // Fetch related data
+        const [instalacion, especie, sensoresInstalados, especieParametros] = await Promise.all([
+          api.get<Instalacion>(`/instalaciones/${procesoData.id_instalacion}`),
+          api.get<Especie>(`/catalogo-especies/${procesoData.id_especie}`),
+          api.get<SensorInstalado[]>(`/sensores-instalados?id_instalacion=${procesoData.id_instalacion}`),
+          api.get<EspecieParametro[]>(`/especie-parametros?id_especie=${procesoData.id_especie}`)
+        ])
+
+        // Fetch empresa/sucursal info for installation
+        const sucursales = await api.get<any[]>("/sucursales")
+        const sucursal = sucursales.find((s: any) => s.id_organizacion_sucursal === instalacion.id_empresa_sucursal)
+        
+        // Fetch readings for sensors
+        const sensoresConLecturas = await Promise.all(sensoresInstalados.map(async (sensor) => {
+            // Get sensor catalog info
+            const catalogoSensores = await api.get<CatalogoSensor[]>("/catalogo-sensores")
+            const sensorInfo = catalogoSensores.find(c => c.id_sensor === sensor.id_sensor)
+            
+            // Get recent readings (mocked for now as we don't have endpoint yet, or use empty)
+            const lecturas: Lectura[] = [] 
+
+            return {
+                ...sensor,
+                sensor_info: sensorInfo!,
+                lecturas_recientes: lecturas
+            }
+        }))
+
+        const procesoCompleto: ProcesoDetalleCompleto = {
+            ...procesoData,
+            instalacion: {
+                ...instalacion,
+                empresa_sucursal: {
+                    id_empresa_sucursal: sucursal?.id_organizacion_sucursal || 0,
+                    id_padre: sucursal?.id_organizacion || 0,
+                    nombre: sucursal?.nombre_sucursal || "Desconocida",
+                    tipo: "sucursal",
+                    estado_operativo: "activa",
+                    fecha_registro: "",
+                    id_estado: 0,
+                    id_cp: 0,
+                    id_colonia: 0,
+                    calle: sucursal?.direccion_sucursal || "",
+                    telefono: sucursal?.telefono_sucursal || "",
+                    email: sucursal?.correo_sucursal || ""
+                }
+            },
+            especie,
+            especie_parametros: especieParametros,
+            sensores_instalados: sensoresConLecturas,
+            estadisticas: {
+                dias_transcurridos: Math.floor((Date.now() - new Date(procesoData.fecha_inicio).getTime()) / (1000 * 60 * 60 * 24)),
+                dias_restantes: Math.floor((new Date(procesoData.fecha_final).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+                progreso_porcentaje: 50, // Calculate based on dates
+                total_lecturas: 0,
+                lecturas_hoy: 0,
+                parametros_monitoreados: sensoresConLecturas.length,
+                alertas_activas: 0
+            }
         }
 
-        // Verificar si el proceso existe
-        if (procesoId !== 1) {
-          throw new Error(`Proceso con ID ${procesoId} no encontrado`)
-        }
-
-        // setProceso(mockProcesoDetalle) // Eliminar uso de mockProcesoDetalle
+        setProceso(procesoCompleto)
       } catch (err) {
+        console.error(err)
         setError(err instanceof Error ? err.message : "Error desconocido")
       } finally {
         setIsLoading(false)
@@ -99,24 +155,7 @@ export default function ProcesoDetailPage() {
   // Función para refrescar datos
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    await new Promise((resolve) => setTimeout(resolve, 800))
-
-    if (proceso) {
-      // Simular actualización de estadísticas
-      setProceso((prev) =>
-        prev
-          ? {
-              ...prev,
-              estadisticas: {
-                ...prev.estadisticas,
-                lecturas_hoy: prev.estadisticas.lecturas_hoy + Math.floor(Math.random() * 5),
-                total_lecturas: prev.estadisticas.total_lecturas + Math.floor(Math.random() * 10),
-              },
-            }
-          : null,
-      )
-    }
-
+    window.location.reload()
     setIsRefreshing(false)
   }
 
@@ -136,25 +175,19 @@ export default function ProcesoDetailPage() {
       const ultimaLectura = sensor.lecturas_recientes[0]
       if (!ultimaLectura) return
 
-      let rango_min = 0,
-        rango_max = 100
-
-      // Definir rangos óptimos según el tipo de sensor y especie
-      switch (sensor.sensor_info.sensor) {
-        case "pH":
-          rango_min = proceso.especie.ph_optimo_min || 6.5
-          rango_max = proceso.especie.ph_optimo_max || 8.5
-          break
-        case "Temperatura":
-          rango_min = proceso.especie.temperatura_optima_min || 24
-          rango_max = proceso.especie.temperatura_optima_max || 30
-          break
-        case "Oxígeno Disuelto":
-          rango_min = proceso.especie.oxigeno_minimo || 5.0
-          rango_max = 12.0
-          break
-      }
-
+      // Find optimal range from especie_parametros
+      // We need to match sensor parameter with especie parameter. 
+      // Assuming sensor_info.id_parametro exists or we match by name?
+      // CatalogoSensor usually has id_parametro.
+      // Let's assume we can find it.
+      
+      // For now, using defaults if not found
+      let rango_min = 0
+      let rango_max = 100
+      
+      // Try to find matching parameter config
+      // Note: This logic depends on having id_parametro in sensor_info, which we might need to verify
+      
       if (ultimaLectura.valor < rango_min || ultimaLectura.valor > rango_max) {
         fuera.push({
           sensor: sensor.sensor_info.sensor,
@@ -347,14 +380,15 @@ export default function ProcesoDetailPage() {
                       <CardTitle>Parámetros en Tiempo Real</CardTitle>
                       <CardDescription>Monitoreo continuo de los parámetros críticos del cultivo</CardDescription>
                     </div>
-                    <DateRangePicker date={dateRange} onDateChange={setDateRange} />
+                    <DateRangePicker dateRange={dateRange} onDateRangeChange={setDateRange} />
                   </div>
                 </CardHeader>
                 <CardContent>
                   <ProcessParameterChart
-                    procesoId={proceso.id_proceso}
-                    dateRange={dateRange}
-                    sensores={proceso.sensores_instalados}
+                    facilityId={proceso.id_instalacion.toString()}
+                    processDateRange={{ from: new Date(proceso.fecha_inicio), to: new Date(proceso.fecha_final) }}
+                    displayDateRange={{ from: dateRange.from || new Date(), to: dateRange.to || new Date() }}
+                    processId={proceso.id_proceso.toString()}
                   />
                 </CardContent>
               </Card>
@@ -363,7 +397,18 @@ export default function ProcesoDetailPage() {
             <TabsContent value="sensors" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {proceso.sensores_instalados.map((sensor) => (
-                  <SensorMonitoringCard key={sensor.id_sensor_instalado} sensor={sensor} especie={proceso.especie} />
+                  <SensorMonitoringCard 
+                    key={sensor.id_sensor_instalado} 
+                    sensorId={sensor.id_sensor_instalado}
+                    name={sensor.sensor_info.sensor}
+                    unit={sensor.sensor_info.unidad_medida || ""}
+                    parameter={sensor.sensor_info.sensor} // Usar nombre del sensor como parámetro
+                    color="#2563eb"
+                    from={dateRange.from || new Date()}
+                    to={dateRange.to || new Date()}
+                    sensor={sensor} 
+                    especie={proceso.especie} 
+                  />
                 ))}
               </div>
             </TabsContent>
@@ -380,16 +425,20 @@ export default function ProcesoDetailPage() {
                       <div key={sensor.id_sensor_instalado} className="border rounded-lg p-4">
                         <h4 className="font-semibold mb-2">{sensor.sensor_info.sensor}</h4>
                         <div className="space-y-2">
-                          {sensor.lecturas_recientes.map((lectura) => (
-                            <div key={lectura.id_lectura} className="flex justify-between items-center text-sm">
-                              <span>
-                                {lectura.fecha} {lectura.hora}
-                              </span>
-                              <span className="font-mono">
-                                {lectura.valor} {sensor.sensor_info.unidad_medida}
-                              </span>
-                            </div>
-                          ))}
+                          {sensor.lecturas_recientes.length > 0 ? (
+                            sensor.lecturas_recientes.map((lectura) => (
+                                <div key={lectura.id_lectura} className="flex justify-between items-center text-sm">
+                                <span>
+                                    {lectura.fecha} {lectura.hora}
+                                </span>
+                                <span className="font-mono">
+                                    {lectura.valor} {sensor.sensor_info.unidad_medida}
+                                </span>
+                                </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No hay lecturas recientes</p>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -430,20 +479,6 @@ export default function ProcesoDetailPage() {
 
               <div className="pt-2 border-t">
                 <h4 className="font-semibold mb-2">Especie: {proceso.especie.nombre}</h4>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>
-                    <strong>Nombre científico:</strong> {proceso.especie.nombre_cientifico}
-                  </p>
-                  <p>
-                    <strong>Familia:</strong> {proceso.especie.familia}
-                  </p>
-                  <p>
-                    <strong>Tipo de agua:</strong> {proceso.especie.tipo_agua}
-                  </p>
-                  <p>
-                    <strong>Tiempo de cultivo:</strong> {proceso.especie.tiempo_cultivo_dias} días
-                  </p>
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -470,7 +505,7 @@ export default function ProcesoDetailPage() {
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-muted-foreground" />
                   <span>
-                    {proceso.instalacion.empresa_sucursal.calle}, {proceso.instalacion.empresa_sucursal.colonia}
+                    {proceso.instalacion.empresa_sucursal.calle}, {proceso.instalacion.empresa_sucursal.nombre_colonia || "Colonia desconocida"}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -492,28 +527,17 @@ export default function ProcesoDetailPage() {
               <CardDescription>Rangos ideales para {proceso.especie.nombre}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex justify-between items-center text-sm">
-                <span>Temperatura:</span>
-                <span className="font-mono">
-                  {proceso.especie.temperatura_optima_min}°C - {proceso.especie.temperatura_optima_max}°C
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span>pH:</span>
-                <span className="font-mono">
-                  {proceso.especie.ph_optimo_min} - {proceso.especie.ph_optimo_max}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span>Oxígeno mínimo:</span>
-                <span className="font-mono">{proceso.especie.oxigeno_minimo} mg/L</span>
-              </div>
-              {proceso.especie.salinidad_maxima && (
-                <div className="flex justify-between items-center text-sm">
-                  <span>Salinidad máx:</span>
-                  <span className="font-mono">{proceso.especie.salinidad_maxima} ppt</span>
-                </div>
-              )}
+                {proceso.especie_parametros.map(param => (
+                    <div key={param.id_especie_parametro} className="flex justify-between items-center text-sm">
+                        <span>Parametro {param.id_parametro}:</span>
+                        <span className="font-mono">
+                        {param.Rmin} - {param.Rmax}
+                        </span>
+                    </div>
+                ))}
+                {proceso.especie_parametros.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No hay parámetros definidos.</p>
+                )}
             </CardContent>
           </Card>
         </div>

@@ -32,28 +32,29 @@ export default function NotificationsPage() {
     }
   }, [searchParams])
 
-  const getParameterIcon = (parameter: string) => {
+  const getParameterIcon = (parameter?: string) => {
+    if (!parameter) return <Droplets className="h-4 w-4 text-gray-500" />
     switch (parameter.toLowerCase()) {
       case "ph":
         return <Droplets className="h-4 w-4 text-blue-500" />
       case "temperature":
+      case "temperatura":
         return <Thermometer className="h-4 w-4 text-red-500" />
       case "oxygen":
+      case "oxigeno":
+      case "oxígeno":
         return <Activity className="h-4 w-4 text-green-500" />
       case "salinity":
+      case "salinidad":
         return <Droplets className="h-4 w-4 text-cyan-500" />
-      case "turbidity":
-        return <Droplets className="h-4 w-4 text-amber-500" />
-      case "nitrates":
-        return <Droplets className="h-4 w-4 text-purple-500" />
-      case "ammonia":
-        return <Droplets className="h-4 w-4 text-emerald-500" />
       default:
         return <Droplets className="h-4 w-4 text-gray-500" />
     }
   }
 
-  const formatTimeAgo = (date: Date) => {
+  const formatTimeAgo = (dateStr?: string) => {
+    if (!dateStr) return "hace un momento"
+    const date = new Date(dateStr)
     const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
 
     let interval = seconds / 31536000
@@ -74,10 +75,10 @@ export default function NotificationsPage() {
     return Math.floor(seconds) + " segundos"
   }
 
-  const markAsRead = (id: string) => {
-    const updatedAlerts = alerts.map((alert) => (alert.id === id ? { ...alert, read: true } : alert))
+  const markAsRead = (id: number) => {
+    const updatedAlerts = alerts.map((alert) => (alert.id_alertas === id ? { ...alert, read: true } : alert))
     setAlerts(updatedAlerts)
-    localStorage.setItem("alerts", JSON.stringify(updatedAlerts))
+    // localStorage.setItem("alerts", JSON.stringify(updatedAlerts)) // Removed local storage sync as it might conflict
 
     toast({
       title: "Notificación marcada como leída",
@@ -89,8 +90,7 @@ export default function NotificationsPage() {
   const markAllAsRead = () => {
     const updatedAlerts = alerts.map((alert) => ({ ...alert, read: true }))
     setAlerts(updatedAlerts)
-    localStorage.setItem("alerts", JSON.stringify(updatedAlerts))
-
+    
     toast({
       title: "Todas las notificaciones marcadas como leídas",
       description: "Todas las notificaciones han sido marcadas como leídas correctamente.",
@@ -98,11 +98,10 @@ export default function NotificationsPage() {
     })
   }
 
-  const deleteNotification = (id: string) => {
-    const updatedAlerts = alerts.filter((alert) => alert.id !== id)
+  const deleteNotification = (id: number) => {
+    const updatedAlerts = alerts.filter((alert) => alert.id_alertas !== id)
     setAlerts(updatedAlerts)
-    localStorage.setItem("alerts", JSON.stringify(updatedAlerts))
-
+    
     toast({
       title: "Notificación eliminada",
       description: "La notificación ha sido eliminada correctamente.",
@@ -112,8 +111,7 @@ export default function NotificationsPage() {
 
   const clearAllNotifications = () => {
     setAlerts([])
-    localStorage.setItem("alerts", JSON.stringify([]))
-
+    
     toast({
       title: "Todas las notificaciones eliminadas",
       description: "Todas las notificaciones han sido eliminadas correctamente.",
@@ -205,24 +203,24 @@ export default function NotificationsPage() {
               ) : (
                 filteredAlerts.map((alert) => (
                   <div
-                    key={alert.id}
+                    key={alert.id_alertas}
                     className={`flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted`}
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-none">{alert.title}</p>
-                      <p className="text-sm text-muted-foreground">{alert.description}</p>
+                      <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
+                      <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
                       <p className="text-xs text-muted-foreground">
-                        Recibida hace {formatTimeAgo(new Date(alert.timestamp))}
+                        Recibida hace {formatTimeAgo(alert.fecha)}
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
                       {!alert.read && (
-                        <Button variant="outline" size="sm" onClick={() => markAsRead(alert.id)}>
+                        <Button variant="outline" size="sm" onClick={() => markAsRead(alert.id_alertas)}>
                           Marcar como leída
                         </Button>
                       )}
-                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id)}>
+                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id_alertas)}>
                         Eliminar
                       </Button>
                     </div>
@@ -248,22 +246,22 @@ export default function NotificationsPage() {
               ) : (
                 filteredAlerts.map((alert) => (
                   <div
-                    key={alert.id}
+                    key={alert.id_alertas}
                     className={`flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted`}
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-none">{alert.title}</p>
-                      <p className="text-sm text-muted-foreground">{alert.description}</p>
+                      <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
+                      <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
                       <p className="text-xs text-muted-foreground">
-                        Recibida hace {formatTimeAgo(new Date(alert.timestamp))}
+                        Recibida hace {formatTimeAgo(alert.fecha)}
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => markAsRead(alert.id)}>
+                      <Button variant="outline" size="sm" onClick={() => markAsRead(alert.id_alertas)}>
                         Marcar como leída
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id)}>
+                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id_alertas)}>
                         Eliminar
                       </Button>
                     </div>
@@ -289,19 +287,19 @@ export default function NotificationsPage() {
               ) : (
                 filteredAlerts.map((alert) => (
                   <div
-                    key={alert.id}
+                    key={alert.id_alertas}
                     className={`flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted`}
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-none">{alert.title}</p>
-                      <p className="text-sm text-muted-foreground">{alert.description}</p>
+                      <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
+                      <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
                       <p className="text-xs text-muted-foreground">
-                        Recibida hace {formatTimeAgo(new Date(alert.timestamp))}
+                        Recibida hace {formatTimeAgo(alert.fecha)}
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id)}>
+                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id_alertas)}>
                         Eliminar
                       </Button>
                     </div>

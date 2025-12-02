@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # MySQL 5.7 Database (Compatible with VPS)
+  mysql:
+    image: mysql:5.7
+    container_name: aqua-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_dev
+      MYSQL_DATABASE: aqua_sonda
+      MYSQL_USER: aqua_user
+      MYSQL_PASSWORD: aqua_password_dev
+    ports:
+      - "3307:3306"  # Avoid conflict with local MySQL
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./bd.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./scripts/seed-basic-data.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+      --max_connections=200
+      --innodb_buffer_pool_size=256M
+      --query_cache_size=32M
+      --tmp_table_size=64M
+      --max_heap_table_size=64M
+    networks:
+      - aqua-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password_dev"]
+      timeout: 20s
+      retries: 10
+
+  # Adminer - Database Administration Tool
+  adminer:
+    image: adminer:4.8.1
+    container_name: aqua-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql
+      ADMINER_DESIGN: pepa-linha
+    networks:
+      - aqua-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # Redis (Optional - for caching and sessions)
+  redis:
+    image: redis:7-alpine
+    container_name: aqua-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - aqua-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 10s
+      retries: 5
+
+  # MailHog (Email testing in development)
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: aqua-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - aqua-network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  aqua-network:
+    driver: bridge
+
+# Development Scripts
+# 
+# Start all services:
+#   docker-compose up -d
+# 
+# View logs:
+#   docker-compose logs -f mysql
+# 
+# Access MySQL CLI:
+#   docker-compose exec mysql mysql -u root -proot_password_dev aqua_sonda
+# 
+# Access Adminer Web UI:
+#   http://localhost:8080
+#   Server: mysql
+#   Username: aqua_user
+#   Password: aqua_password_dev
+#   Database: aqua_sonda
+# 
+# Access MailHog Web UI:
+#   http://localhost:8025
+# 
+# Stop all services:
+#   docker-compose down
+# 
+# Reset database (CAUTION):
+#   docker-compose down -v && docker-compose up -d

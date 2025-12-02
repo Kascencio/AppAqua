@@ -1,11 +1,13 @@
 "use client"
 
+import { useState, useEffect, useMemo } from "react"
 import { HistoricalMonitoringChart } from "./historical-monitoring-chart"
 import { useSensorData } from "@/hooks/use-sensor-data"
-import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { useWebSocket } from "@/hooks/use-websocket"
+import { TrendingUp, TrendingDown, Minus, Wifi, WifiOff } from "lucide-react"
 
 interface SensorMonitoringCardProps {
-  sensorId: string
+  sensorId: string | number
   name: string
   unit: string
   parameter: string
@@ -13,30 +15,102 @@ interface SensorMonitoringCardProps {
   from: Date
   to: Date
   facilityId?: string
+  realTime?: boolean
+  // También soporta props de objeto sensor para compatibilidad
+  sensor?: any
+  especie?: any
 }
 
 export function SensorMonitoringCard({
-  sensorId,
-  name,
-  unit,
-  parameter,
-  color,
+  sensorId: initialSensorId,
+  name: initialName,
+  unit: initialUnit,
+  parameter: initialParameter,
+  color: initialColor,
   from,
   to,
   facilityId,
+  realTime = true,
+  sensor,
+  especie,
 }: SensorMonitoringCardProps) {
-  const { data, loading, error } = useSensorData(sensorId, from, to)
+  // Extraer datos del objeto sensor si está disponible (para compatibilidad)
+  const sensorId = sensor?.id_sensor_instalado || sensor?.id || initialSensorId
+  const name = sensor?.sensor_info?.sensor || sensor?.name || initialName
+  const unit = sensor?.sensor_info?.unidad_medida || sensor?.unit || initialUnit
+  const parameter = sensor?.sensor_info?.parametro || sensor?.parameter || initialParameter
+  const color = initialColor
 
-  const stats =
-    data.length > 0
-      ? {
-          current: data[data.length - 1]?.value || 0,
-          average: data.reduce((sum, point) => sum + point.value, 0) / data.length,
-          min: Math.min(...data.map((point) => point.value)),
-          max: Math.max(...data.map((point) => point.value)),
-          trend: data.length > 1 ? data[data.length - 1].value - data[0].value : 0,
+  // Obtener datos históricos iniciales
+  const { data: initialData, loading: initialLoading, error: initialError } = useSensorData(String(sensorId), from, to)
+
+  // Estado para datos actualizados en tiempo real
+  const [realtimeData, setRealtimeData] = useState<{ value: number; timestamp: string; status: string } | null>(null)
+  const [data, setData] = useState(initialData)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+
+  // WebSocket para actualizaciones en tiempo real
+  const { isConnected, lastMessage, error: wsError } = useWebSocket({
+    sensorId: sensorId,
+    enabled: realTime,
+    onMessage: (message) => {
+      if (message.sensorId === String(sensorId) && message.value !== undefined) {
+        setRealtimeData({
+          value: message.value,
+          timestamp: message.timestamp || new Date().toISOString(),
+          status: message.status || "normal",
+        })
+        setLastUpdate(new Date())
+        
+        // Actualizar el último punto de datos
+        if (data.length > 0) {
+          setData((prev) => {
+            const newData = [...prev]
+            newData[newData.length - 1] = {
+              ...newData[newData.length - 1],
+              value: message.value,
+              timestamp: message.timestamp || new Date().toISOString(),
+              status: message.status || "normal",
+            }
+            return newData
+          })
         }
-      : null
+      }
+    },
+    onError: () => {
+      // Si WebSocket falla, continuar con polling
+    },
+  })
+
+  // Actualizar datos cuando cambian los datos iniciales
+  useEffect(() => {
+    if (initialData.length > 0) {
+      setData(initialData)
+    }
+  }, [initialData])
+
+  const loading = initialLoading && !realtimeData
+  const error = initialError && !realtimeData
+
+  // Calcular estadísticas con datos actualizados en tiempo real
+  const stats = useMemo(() => {
+    if (data.length === 0) return null
+
+    // Usar valor en tiempo real si está disponible, sino usar el último valor histórico
+    const currentValue = realtimeData?.value ?? data[data.length - 1]?.value ?? 0
+    const allValues = [...data.map((p) => p.value)]
+    if (realtimeData?.value) {
+      allValues[allValues.length - 1] = realtimeData.value
+    }
+
+    return {
+      current: currentValue,
+      average: allValues.reduce((sum, val) => sum + val, 0) / allValues.length,
+      min: Math.min(...allValues),
+      max: Math.max(...allValues),
+      trend: allValues.length > 1 ? allValues[allValues.length - 1] - allValues[0] : 0,
+    }
+  }, [data, realtimeData])
 
   if (loading) {
     return (
@@ -89,7 +163,24 @@ export function SensorMonitoringCard({
     <div className="bg-white border border-gray-200 rounded-lg p-4 h-72 hover:shadow-md transition-shadow">
       {/* Header with better typography */}
       <div className="mb-4">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">{name}</h4>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-medium text-gray-700">{name}</h4>
+          {realTime && (
+            <div className="flex items-center gap-1">
+              {isConnected ? (
+                <>
+                  <Wifi className="h-3 w-3 text-green-500" />
+                  <span className="text-xs text-green-600">En vivo</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-3 w-3 text-gray-400" />
+                  <span className="text-xs text-gray-400">Desconectado</span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         <div className="flex items-baseline gap-2 mb-2">
           <span className="text-2xl font-bold text-gray-900">{formatValue(stats.current)}</span>
           <span className="text-sm text-gray-500 font-medium">{unit}</span>
@@ -98,6 +189,11 @@ export function SensorMonitoringCard({
           {getTrendIcon(stats.trend)}
           <span className={`text-xs font-medium ${getTrendColor(stats.trend)}`}>{getTrendText(stats.trend)}</span>
         </div>
+        {lastUpdate && (
+          <div className="text-xs text-gray-400 mt-1">
+            Actualizado: {lastUpdate.toLocaleTimeString()}
+          </div>
+        )}
       </div>
 
       {/* Statistics with better spacing */}

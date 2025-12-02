@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useBranches } from "@/hooks/use-branches"
 import type { Instalacion } from "@/types/instalacion"
 
 interface AddInstalacionDialogProps {
@@ -28,6 +29,7 @@ interface AddInstalacionDialogProps {
 export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: AddInstalacionDialogProps) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
+  const { branches, loading: loadingBranches } = useBranches()
 
   // Formulario basado en estructura REAL de BD
   const [formData, setFormData] = useState<Omit<Instalacion, "id_instalacion">>({
@@ -129,12 +131,20 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
                 onValueChange={(value) => handleInputChange("id_empresa_sucursal", Number(value))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar sucursal" />
+                  <SelectValue placeholder={loadingBranches ? "Cargando sucursales..." : "Seleccionar sucursal"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">Sucursal Comalcalco</SelectItem>
-                  <SelectItem value="2">Sucursal Paraíso</SelectItem>
-                  <SelectItem value="3">Sucursal Cárdenas</SelectItem>
+                  {Array.isArray(branches) && branches.length > 0 ? (
+                    branches.map((b: any) => (
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.nombre || b.name || `Sucursal ${b.id}`}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value={String(formData.id_empresa_sucursal)} disabled>
+                      {loadingBranches ? "Cargando..." : "No hay sucursales"}
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>

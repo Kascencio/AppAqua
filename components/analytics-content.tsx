@@ -57,12 +57,13 @@ export default function AnalyticsContent() {
     if (!processes || !sensors.length || !branches.length) return null
 
     const activeSensors = sensors.filter((s) => s.status === "active").length
-    const totalFacilities = branches.reduce((sum, branch) => sum + branch.facilities.length, 0)
+    const totalFacilities = branches.length // Usar branches como facilities por ahora
     const alertsCount = sensors.filter((s) => s.status === "alert").length
+    const activeProcesses = processes.filter((p) => p.estado === "activo").length
 
     return {
-      totalProcesses: processes.all.length,
-      activeProcesses: processes.active.length,
+      totalProcesses: processes.length,
+      activeProcesses,
       totalSensors: sensors.length,
       activeSensors,
       totalFacilities,
@@ -224,7 +225,7 @@ export default function AnalyticsContent() {
                 </div>
                 <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg">
                   <div className="text-2xl font-bold text-purple-600">
-                    {Object.keys(processes.bySpecies).length}
+                    {new Set(processes.map(p => p.id_especie)).size}
                   </div>
                   <div className="text-sm text-muted-foreground">Especies en Cultivo</div>
                 </div>

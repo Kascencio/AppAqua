@@ -93,9 +93,10 @@ export default function UsersPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    role: "standard" as const,
-    status: "active" as const,
+    role: "standard" as "superadmin" | "admin" | "standard" | "operator",
+    status: "active" as "active" | "inactive" | "pending",
     branchAccess: [] as string[],
+    facilityAccess: [] as string[],
     phone: "",
     department: "",
     notes: "",
@@ -142,10 +143,10 @@ export default function UsersPage() {
     if (!searchTerm) return true
     const term = searchTerm.toLowerCase()
     return (
-      user.name.toLowerCase().includes(term) ||
-      user.email.toLowerCase().includes(term) ||
-      user.role.toLowerCase().includes(term) ||
-      (user.department && user.department.toLowerCase().includes(term)) ||
+      (user.name ? user.name.toLowerCase().includes(term) : false) ||
+      (user.email ? user.email.toLowerCase().includes(term) : false) ||
+      (user.role ? user.role.toLowerCase().includes(term) : false) ||
+      (user.department ? user.department.toLowerCase().includes(term) : false) ||
       getUserCompanies(user).toLowerCase().includes(term)
     )
   })
@@ -239,7 +240,7 @@ export default function UsersPage() {
       } else {
         return {
           ...prev,
-          facilityAccess: currentFacilityAccess.filter((id) => id !== facilityId),
+          facilityAccess: currentFacilityAccess.filter((id: string) => id !== facilityId),
         }
       }
     })
@@ -338,6 +339,7 @@ export default function UsersPage() {
       role: user.role,
       status: user.status,
       branchAccess: getBranchAccess(user),
+      facilityAccess: user.facilityAccess || [],
       phone: user.phone || "",
       department: user.department || "",
       notes: user.notes || "",
@@ -360,6 +362,7 @@ export default function UsersPage() {
       role: "standard",
       status: "active",
       branchAccess: [],
+      facilityAccess: [],
       phone: "",
       department: "",
       notes: "",
@@ -376,6 +379,8 @@ export default function UsersPage() {
         return "Administrador"
       case "standard":
         return "Estandar"
+      case "operator":
+        return "Operador"
       default:
         return role
     }
@@ -390,6 +395,8 @@ export default function UsersPage() {
         return "Acceso completo"
       case "standard":
         return "Acceso básico a su área"
+      case "operator":
+        return "Acceso a operaciones"
       default:
         return ""
     }
@@ -418,6 +425,8 @@ export default function UsersPage() {
         return "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300"
       case "standard":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300"
+      case "operator":
+        return "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300"
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-800/20 dark:text-gray-300"
     }
@@ -446,6 +455,8 @@ export default function UsersPage() {
         return <ShieldCheck className="h-4 w-4 mr-1" />
       case "standard":
         return <Shield className="h-4 w-4 mr-1" />
+      case "operator":
+        return <Factory className="h-4 w-4 mr-1" />
       default:
         return <Eye className="h-4 w-4 mr-1" />
     }
@@ -466,17 +477,16 @@ export default function UsersPage() {
   }
 
   // Obtener iniciales para avatar
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .substring(0, 2)
+  const getInitials = (name?: string) => {
+    const safe = (name || "").trim()
+    if (safe.length === 0) return "US"
+    const parts = safe.split(/\s+/)
+    const initials = (parts[0]?.[0] || "U") + (parts[1]?.[0] || "")
+    return initials.toUpperCase()
   }
 
   // Cambiar estado del usuario
-  const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
+  const handleToggleUserStatus = async (userId: number, currentStatus: string) => {
     const newStatus = currentStatus === "active" ? "inactive" : "active"
 
     try {
@@ -502,7 +512,7 @@ export default function UsersPage() {
   }
 
   // Cambiar rol del usuario rápidamente
-  const handleQuickRoleChange = async (userId: string, newRole: string) => {
+  const handleQuickRoleChange = async (userId: number, newRole: string) => {
     try {
       const user = users.find((u) => u.id === userId)
       if (!user) return
@@ -533,6 +543,7 @@ export default function UsersPage() {
       role: user.role,
       status: "pending",
       branchAccess: getBranchAccess(user),
+      facilityAccess: user.facilityAccess || [],
       phone: user.phone || "",
       department: user.department || "",
       notes: user.notes || "",
@@ -542,7 +553,7 @@ export default function UsersPage() {
   }
 
   // Enviar invitación por email
-  const handleSendInvitation = async (userId: string) => {
+  const handleSendInvitation = async (userId: number) => {
     try {
       const user = users.find((u) => u.id === userId)
       if (!user) return
@@ -564,7 +575,7 @@ export default function UsersPage() {
   }
 
   // Resetear contraseña
-  const handleResetPassword = async (userId: string) => {
+  const handleResetPassword = async (userId: number) => {
     try {
       const user = users.find((u) => u.id === userId)
       if (!user) return

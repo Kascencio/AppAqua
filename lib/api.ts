@@ -1,162 +1,81 @@
-// API client optimizado para React Query
-export class ApiClient {
-  private baseUrl: string
+import { toast } from "sonner"
 
-  constructor(baseUrl = "/api") {
-    this.baseUrl = baseUrl
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3300/api"
+
+interface RequestOptions extends RequestInit {
+  headers?: Record<string, string>
+}
+
+class ApiClient {
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    }
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("token")
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`
+      }
+    }
+    return headers
   }
 
-  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`
-    const response = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
+  private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const url = `${API_URL}${endpoint}`
+    const headers = { ...this.getHeaders(), ...options.headers }
+
+    try {
+      const response = await fetch(url, { ...options, headers })
+
+      if (!response.ok) {
+        // Handle 401 Unauthorized globally if needed
+        if (response.status === 401) {
+          if (typeof window !== "undefined") {
+            // Optional: Redirect to login or clear token
+            // localStorage.removeItem("token")
+            // window.location.href = "/login"
+          }
+        }
+        
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || errorData.error || `Error ${response.status}: ${response.statusText}`)
+      }
+
+      // Some endpoints might return empty body (e.g. 204 No Content)
+      if (response.status === 204) {
+        return {} as T
+      }
+
+      return response.json()
+    } catch (error: any) {
+      console.error(`API Request failed for ${url}:`, error)
+      throw error
+    }
+  }
+
+  async get<T>(endpoint: string, options?: RequestOptions): Promise<T> {
+    return this.request<T>(endpoint, { ...options, method: "GET" })
+  }
+
+  async post<T>(endpoint: string, body: any, options?: RequestOptions): Promise<T> {
+    return this.request<T>(endpoint, {
       ...options,
+      method: "POST",
+      body: JSON.stringify(body),
     })
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`)
-    }
-    return response.json()
   }
 
-  // Sensores
-  async getSensoresInstalados(instalacionId?: number) {
-    const params = instalacionId ? `?instalacion=${instalacionId}` : ""
-    return this.request(`/sensores${params}`)
-  }
-  async getSensorById(id: number) {
-    return this.request(`/sensores/${id}`)
-  }
-  async getSensorReadings(sensorId: number, dateRange?: { from: Date; to: Date }) {
-    const params = new URLSearchParams()
-    if (dateRange) {
-      params.append("from", dateRange.from.toISOString())
-      params.append("to", dateRange.to.toISOString())
-    }
-    const queryString = params.toString() ? `?${params.toString()}` : ""
-    return this.request(`/lecturas?sensor=${sensorId}${queryString}`)
-  }
-  async createSensor(data: any) {
-    return this.request(`/sensores`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-  async updateSensor(id: number, data: any) {
-    return this.request(`/sensores/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    })
-  }
-  async deleteSensor(id: number) {
-    return this.request(`/sensores/${id}`, {
-      method: "DELETE" })
-  }
-
-  // Procesos
-  async getProcesses() {
-    return this.request("/procesos")
-  }
-  async getProcessById(id: number) {
-    return this.request(`/procesos/${id}`)
-  }
-  async createProcess(data: any) {
-    return this.request("/procesos", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-  async updateProcess(id: number, data: any) {
-    return this.request(`/procesos/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    })
-  }
-  async deleteProcess(id: number) {
-    return this.request(`/procesos/${id}`, {
-      method: "DELETE" })
-  }
-
-  // Instalaciones
-  async getFacilities(sucursalId?: number) {
-    const params = sucursalId ? `?sucursal=${sucursalId}` : ""
-    return this.request(`/instalaciones${params}`)
-  }
-  async getFacilityById(id: number) {
-    return this.request(`/instalaciones/${id}`)
-  }
-  async createFacility(data: any) {
-    return this.request(`/instalaciones`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-  async updateFacility(id: number, data: any) {
-    return this.request(`/instalaciones/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    })
-  }
-  async deleteFacility(id: number) {
-    return this.request(`/instalaciones/${id}`, {
-      method: "DELETE" })
-  }
-
-  // Especies
-  async getSpecies() {
-    return this.request("/especies")
-  }
-  async getSpeciesById(id: number) {
-    return this.request(`/especies/${id}`)
-  }
-  async createSpecies(data: any) {
-    return this.request(`/especies`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-  async updateSpecies(id: number, data: any) {
-    return this.request(`/especies/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    })
-  }
-  async deleteSpecies(id: number) {
-    return this.request(`/especies/${id}`, {
-      method: "DELETE" })
-  }
-
-  // Sucursales
-  async getBranches() {
-    return this.request("/sucursales")
-  }
-  async getBranchById(id: number) {
-    return this.request(`/sucursales?id=${id}`)
-  }
-  async createBranch(data: any) {
-    return this.request(`/sucursales`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-  async updateBranch(id: number, data: any) {
-    return this.request(`/sucursales?id=${id}`, {
+  async put<T>(endpoint: string, body: any, options?: RequestOptions): Promise<T> {
+    return this.request<T>(endpoint, {
+      ...options,
       method: "PUT",
-      body: JSON.stringify(data),
+      body: JSON.stringify(body),
     })
   }
-  async deleteBranch(id: number) {
-    return this.request(`/sucursales?id=${id}`, {
-      method: "DELETE" })
-  }
 
-  // Alertas
-  async getAlerts(status?: string) {
-    const params = status ? `?status=${status}` : ""
-    return this.request(`/alertas${params}`)
+  async delete<T>(endpoint: string, options?: RequestOptions): Promise<T> {
+    return this.request<T>(endpoint, { ...options, method: "DELETE" })
   }
 }
 
-export const apiClient = new ApiClient()
+export const api = new ApiClient()

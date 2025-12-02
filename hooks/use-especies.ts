@@ -1,11 +1,11 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import type { EspecieDetallada } from "@/types/especie"
+import type { Especie } from "@/types/especie"
 import { useToast } from "@/hooks/use-toast"
 
 export function useEspecies() {
-  const [especies, setEspecies] = useState<EspecieDetallada[]>([])
+  const [especies, setEspecies] = useState<Especie[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
