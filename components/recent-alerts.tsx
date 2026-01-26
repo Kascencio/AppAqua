@@ -9,15 +9,22 @@ import { useAppContext } from "@/context/app-context"
 
 export function RecentAlerts() {
   const router = useRouter()
-  const { alerts, isLoading } = useAppContext()
+  const context = useAppContext()
+  
+  const alerts = context?.alerts ?? []
+  const isLoading = context?.isLoading ?? false
 
   // Verificar que alerts existe y es un array antes de filtrar
   const safeAlerts = Array.isArray(alerts) ? alerts : []
 
   // Filtrar solo alertas activas y ordenar por fecha (más recientes primero)
   const activeAlerts = safeAlerts
-    .filter((alert) => alert.estado_alerta === "activa")
-    .sort((a, b) => b.fecha_hora_alerta.getTime() - a.fecha_hora_alerta.getTime())
+    .filter((alert: any) => alert.estado_alerta === "activa")
+    .sort((a: any, b: any) => {
+      const dateA = a.fecha_hora_alerta ? new Date(a.fecha_hora_alerta).getTime() : 0
+      const dateB = b.fecha_hora_alerta ? new Date(b.fecha_hora_alerta).getTime() : 0
+      return dateB - dateA
+    })
     .slice(0, 5) // Mostrar solo las 5 más recientes
 
   const getParameterIcon = (parametroId: number) => {
@@ -46,8 +53,9 @@ export function RecentAlerts() {
     }
   }
 
-  const formatTimeAgo = (date: Date) => {
-    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
+  const formatTimeAgo = (date?: string | Date) => {
+    const target = date instanceof Date ? date : date ? new Date(date) : new Date()
+    const seconds = Math.floor((new Date().getTime() - target.getTime()) / 1000)
 
     let interval = seconds / 31536000
     if (interval > 1) return Math.floor(interval) + " años"
@@ -98,7 +106,7 @@ export function RecentAlerts() {
         <div className="space-y-4">
           {activeAlerts.map((alert) => (
             <div
-              key={alert.id_alerta}
+              key={alert.id_alertas || alert.id_alerta}
               className="flex items-start gap-3 pb-4 border-b last:border-0 last:pb-0 p-3 rounded-lg transition-colors bg-muted/30 hover:bg-muted/50"
             >
               <div className="bg-red-100 dark:bg-red-900/20 p-2 rounded-full shrink-0">
@@ -106,18 +114,18 @@ export function RecentAlerts() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="font-medium text-sm">{getParameterName(alert.id_parametro)} fuera de rango</h4>
+                  <h4 className="font-medium text-sm">{getParameterName(alert.id_parametro || 0)} fuera de rango</h4>
                   <Badge variant="outline" className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {formatTimeAgo(alert.fecha_hora_alerta)}
+                    {formatTimeAgo(alert.fecha_hora_alerta || alert.fecha)}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">{alert.mensaje_alerta}</p>
+                <p className="text-sm text-muted-foreground mt-1">{alert.mensaje_alerta || alert.descripcion}</p>
                 <div className="flex items-center mt-2 text-sm">
-                  {getParameterIcon(alert.id_parametro)}
-                  <span className="ml-1 font-medium text-destructive">{alert.valor_medido.toFixed(1)}</span>
+                  {getParameterIcon(alert.id_parametro || 0)}
+                  <span className="ml-1 font-medium text-destructive">{(alert.valor_medido ?? alert.dato_puntual)?.toFixed(1)}</span>
                   <span className="text-xs text-muted-foreground ml-2">
-                    (Rango: {alert.valor_minimo_esperado?.toFixed(1)} - {alert.valor_maximo_esperado?.toFixed(1)})
+                    (Rango: {alert.valor_minimo_esperado?.toFixed(1) ?? '-'} - {alert.valor_maximo_esperado?.toFixed(1) ?? '-'})
                   </span>
                 </div>
                 <div className="mt-1">

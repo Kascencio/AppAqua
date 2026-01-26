@@ -18,7 +18,7 @@ export function WaterQualityOverview() {
   const { readings, loading, error } = useSensorDataMultiple(facilityId, {
     from: dateRange.from,
     to: dateRange.to,
-    parameters: ["ph", "temperatura", "oxigeno"],
+    parameters: ["ph", "temperature", "oxygen"],
   })
 
   // Si no hay facilityId, no renderices nada
@@ -33,7 +33,7 @@ export function WaterQualityOverview() {
   // Procesar datos para el gráfico (memoizado)
   const chartData = useMemo(() => {
     return readings.reduce((acc: any[], lectura) => {
-      const fecha = lectura.timestamp.split("T")[0]
+      const fecha = lectura.timestamp.toISOString().split("T")[0]
       let entry = acc.find((d) => d.name === fecha)
       if (!entry) {
         entry = { name: fecha }
@@ -59,11 +59,11 @@ export function WaterQualityOverview() {
             label: "pH",
             color: "hsl(var(--chart-1))",
           },
-          temperatura: {
+          temperature: {
             label: "Temperatura (°C)",
             color: "hsl(var(--chart-2))",
           },
-          oxigeno: {
+          oxygen: {
             label: "Oxígeno Disuelto (mg/L)",
             color: "hsl(var(--chart-3))",
           },
@@ -78,8 +78,8 @@ export function WaterQualityOverview() {
             <ChartTooltip content={<ChartTooltipContent />} />
             <Legend />
             <Line type="monotone" dataKey="ph" stroke="var(--color-ph)" />
-            <Line type="monotone" dataKey="temperatura" stroke="var(--color-temperatura)" />
-            <Line type="monotone" dataKey="oxigeno" stroke="var(--color-oxigeno)" />
+            <Line type="monotone" dataKey="temperature" stroke="var(--color-temperature)" />
+            <Line type="monotone" dataKey="oxygen" stroke="var(--color-oxygen)" />
           </LineChart>
         </ResponsiveContainer>
       </ChartContainer>
@@ -95,14 +95,14 @@ export function WaterQualityOverview() {
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-lg font-medium mb-2">Temperatura Promedio</h3>
-            <div className="text-3xl font-bold">{promedio("temperatura").toFixed(2)} °C</div>
+            <div className="text-3xl font-bold">{promedio("temperature").toFixed(2)} °C</div>
             <p className="text-sm text-muted-foreground">Rango óptimo: 24.0 - 28.0 °C</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <h3 className="text-lg font-medium mb-2">Oxígeno Disuelto Promedio</h3>
-            <div className="text-3xl font-bold">{promedio("oxigeno").toFixed(2)} mg/L</div>
+            <div className="text-3xl font-bold">{promedio("oxygen").toFixed(2)} mg/L</div>
             <p className="text-sm text-muted-foreground">Rango óptimo: &gt; 5.0 mg/L</p>
           </CardContent>
         </Card>

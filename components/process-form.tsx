@@ -15,10 +15,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertTriangle } from "lucide-react"
 import type { Proceso } from "@/types/proceso"
 
+type ProcessFormInitialData = Partial<Proceso> & {
+  nombre_proceso?: string
+  descripcion?: string
+  objetivos?: string
+}
+
 interface ProcessFormProps {
   onSubmit: (proceso: Omit<Proceso, "id_proceso">) => Promise<boolean>
   onCancel: () => void
-  initialData?: Partial<Proceso>
+  initialData?: ProcessFormInitialData
 }
 
 export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProps) {
@@ -185,7 +191,7 @@ export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProp
                 <SelectContent>
                   {instalaciones.map((instalacion) => (
                     <SelectItem key={instalacion.id_instalacion} value={instalacion.id_instalacion.toString()}>
-                      {instalacion.nombre_instalacion} - {instalacion.sucursal_nombre}
+                      {String(instalacion.nombre_instalacion ?? instalacion.nombre ?? "")} - {String((instalacion as any).sucursal_nombre ?? "")}
                     </SelectItem>
                   ))}
                 </SelectContent>

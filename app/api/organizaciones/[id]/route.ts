@@ -32,12 +32,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       include: {
         estados: true,
         municipios: true,
-        colonias: true,
         organizacion_sucursal: {
           include: {
             estados: true,
             municipios: true,
-            colonias: true,
           }
         }
       }
@@ -139,7 +137,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       include: {
         estados: true,
         municipios: true,
-        colonias: true,
       }
     })
 

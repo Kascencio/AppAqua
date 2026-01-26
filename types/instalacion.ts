@@ -10,6 +10,11 @@ export interface Instalacion {
   descripcion: string
   tipo_uso: "acuicultura" | "tratamiento" | "otros"
   id_proceso: number
+  // Extended fields for API compatibility
+  nombre_empresa?: string
+  nombre_proceso?: string
+  nombre_especie?: string
+  [key: string]: unknown
 }
 
 export interface InstalacionCompleta extends Instalacion {

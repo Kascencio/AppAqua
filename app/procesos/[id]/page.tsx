@@ -66,14 +66,24 @@ export default function ProcessDetailPage() {
         </Button>
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-            {process.nombre_proceso || `Proceso ${process.id_proceso}`}
+            {process.codigo_proceso || `Proceso ${process.id_proceso}`}
           </h1>
           <p className="text-muted-foreground">Monitoreo detallado del proceso de cultivo</p>
         </div>
       </div>
 
       {/* Dashboard de monitoreo */}
-      <ProcessMonitoringDashboard proceso={process} />
+      <ProcessMonitoringDashboard
+        proceso={{
+          ...process,
+          codigo_proceso: process.codigo_proceso || `PROC-${process.id_proceso}`,
+          estado: process.estado || "activo",
+          progreso: process.progreso ?? 0,
+          descripcion: process.descripcion || "",
+          dias_originales: process.dias_originales ?? 0,
+          dias_totales: process.dias_totales ?? 0,
+        }}
+      />
     </div>
   )
 }

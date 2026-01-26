@@ -16,13 +16,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { CalendarDays, Clock, Plus, ArrowRight } from "lucide-react"
-import type { ProcesoExtendido } from "@/types/proceso"
+import type { ProcesoConCalculos } from "@/types/proceso"
 import { calculateProcessDuration } from "@/types/proceso"
 
 interface ExtendProcessDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  proceso: ProcesoExtendido | null
+  proceso: ProcesoConCalculos | null
   onConfirm: (extension: { dias_adicionales: number; motivo_extension: string }) => void
 }
 
@@ -37,7 +37,7 @@ export function ExtendProcessDialog({ open, onOpenChange, proceso, onConfirm }: 
 
   const duracionOriginal = calculateProcessDuration(
     proceso.fecha_inicio,
-    proceso.fecha_final_original || proceso.fecha_final,
+    proceso.fecha_final,
   )
   const duracionActual = calculateProcessDuration(proceso.fecha_inicio, proceso.fecha_final)
   const nuevaDuracion = duracionActual + diasAdicionales

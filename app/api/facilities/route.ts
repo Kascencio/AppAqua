@@ -1,5 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
+import { parseDateForPrisma } from "@/lib/date-utils"
+
+function normalizeOrganizacionSucursalId(raw: unknown): number | null {
+  const n = typeof raw === "string" ? Number(raw) : (raw as number)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n >= 10000 ? n - 10000 : n
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,18 +21,36 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    if (!body.id_empresa_sucursal || !body.nombre_instalacion || !body.fecha_instalacion || !body.estado_operativo || !body.descripcion || !body.tipo_uso || !body.id_proceso) {
+    // Accept either id_empresa_sucursal or id_organizacion_sucursal
+    const rawOrgId = body.id_organizacion_sucursal ?? body.id_empresa_sucursal
+    if (!rawOrgId || !body.nombre_instalacion || !body.fecha_instalacion || !body.estado_operativo || !body.descripcion || !body.tipo_uso) {
       return NextResponse.json({ error: "Campos requeridos faltantes" }, { status: 400 })
     }
+    
+    const orgId = normalizeOrganizacionSucursalId(rawOrgId)
+    if (!orgId) {
+      return NextResponse.json({ error: "ID de organización/sucursal inválido" }, { status: 400 })
+    }
+    
+    const fechaInst = parseDateForPrisma(body.fecha_instalacion)
+    if (!fechaInst) {
+      return NextResponse.json({ error: "Formato de fecha inválido" }, { status: 400 })
+    }
+    
+    const idProceso = body.id_proceso ? Number(body.id_proceso) : null
+    if (!idProceso) {
+      return NextResponse.json({ error: "ID de proceso inválido" }, { status: 400 })
+    }
+
     const created = await prisma.instalacion.create({
       data: {
-        id_empresa_sucursal: Number(body.id_empresa_sucursal),
+        id_organizacion_sucursal: orgId,
         nombre_instalacion: body.nombre_instalacion,
-        fecha_instalacion: new Date(body.fecha_instalacion),
+        fecha_instalacion: fechaInst,
         estado_operativo: body.estado_operativo,
         descripcion: body.descripcion,
         tipo_uso: body.tipo_uso,
-        id_proceso: Number(body.id_proceso),
+        id_proceso: idProceso,
       },
     })
     return NextResponse.json(created, { status: 201 })

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import type { AlertStatus } from "@/types"
+import type { AlertStatus } from "@/types/alert"
 import { useToast } from "@/components/ui/use-toast"
 
 export function useAlerts(status?: AlertStatus) {

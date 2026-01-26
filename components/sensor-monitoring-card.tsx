@@ -40,6 +40,9 @@ export function SensorMonitoringCard({
   const unit = sensor?.sensor_info?.unidad_medida || sensor?.unit || initialUnit
   const parameter = sensor?.sensor_info?.parametro || sensor?.parameter || initialParameter
   const color = initialColor
+  
+  // Extraer instalacionId del sensor o facilityId
+  const instalacionId = sensor?.id_instalacion || sensor?.instalacion_id || facilityId
 
   // Obtener datos históricos iniciales
   const { data: initialData, loading: initialLoading, error: initialError } = useSensorData(String(sensorId), from, to)
@@ -49,16 +52,25 @@ export function SensorMonitoringCard({
   const [data, setData] = useState(initialData)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
 
+  const normalizeStatus = (status?: string): "normal" | "warning" | "critical" => {
+    if (status === "critical") return "critical"
+    if (status === "warning" || status === "offline") return "warning"
+    return "normal"
+  }
+
   // WebSocket para actualizaciones en tiempo real
   const { isConnected, lastMessage, error: wsError } = useWebSocket({
+    instalacionId: instalacionId as string,
     sensorId: sensorId,
-    enabled: realTime,
+    enabled: realTime && !!instalacionId,
     onMessage: (message) => {
       if (message.sensorId === String(sensorId) && message.value !== undefined) {
+        const value = Number(message.value ?? 0)
+        const status = normalizeStatus(message.status)
         setRealtimeData({
-          value: message.value,
+          value,
           timestamp: message.timestamp || new Date().toISOString(),
-          status: message.status || "normal",
+          status,
         })
         setLastUpdate(new Date())
         
@@ -68,9 +80,9 @@ export function SensorMonitoringCard({
             const newData = [...prev]
             newData[newData.length - 1] = {
               ...newData[newData.length - 1],
-              value: message.value,
+              value,
               timestamp: message.timestamp || new Date().toISOString(),
-              status: message.status || "normal",
+              status,
             }
             return newData
           })

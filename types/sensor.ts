@@ -28,6 +28,16 @@ export interface Sensor {
   notes?: string
 }
 
+export type SensorParameter =
+  | "ph"
+  | "temperature"
+  | "oxygen"
+  | "salinity"
+  | "turbidity"
+  | "nitrates"
+  | "ammonia"
+  | "barometric"
+
 export type SensorType =
   | "ph"
   | "temperature"

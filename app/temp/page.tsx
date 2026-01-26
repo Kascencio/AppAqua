@@ -351,7 +351,7 @@ export default function TempPage() {
 
   const getRolePermissions = (roleId: number): string[] => {
     const rolePermissions = ROLE_PERMISSIONS[roleId as keyof typeof ROLE_PERMISSIONS]
-    return rolePermissions || []
+    return rolePermissions ? Array.from(rolePermissions) : []
   }
 
   const isSystemRole = (nombre: string): boolean => {

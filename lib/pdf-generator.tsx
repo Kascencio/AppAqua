@@ -139,6 +139,11 @@ const getOptimalRange = (sensorType: string) => {
   return ranges[sensorType] || { min: 0, max: 100, unit: "" }
 }
 
+const lecturaDateValue = (lectura: Lectura) => {
+  const ts = lectura.fecha_hora || (lectura.fecha && lectura.hora ? `${lectura.fecha}T${lectura.hora}` : lectura.fecha)
+  return new Date(ts)
+}
+
 // PDF Document Component
 const PDFDocument = ({
   instalaciones,
@@ -214,7 +219,7 @@ const PDFDocument = ({
                   const sensorInfo = catalogoSensores.find((cat) => cat.id_sensor === sensor.id_sensor)
                   const ultimaLectura = lecturas
                     .filter((lectura) => lectura.id_sensor_instalado === sensor.id_sensor_instalado)
-                    .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())[0]
+                    .sort((a, b) => lecturaDateValue(b).getTime() - lecturaDateValue(a).getTime())[0]
 
                   const optimalRange = getOptimalRange(sensorInfo?.sensor || "")
                   const sensorStatus = ultimaLectura
@@ -262,7 +267,7 @@ const PDFDocument = ({
 
                   return lectura.valor < optimalRange.min || lectura.valor > optimalRange.max
                 })
-                .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())
+                .sort((a, b) => lecturaDateValue(b).getTime() - lecturaDateValue(a).getTime())
                 .slice(0, 10) // Últimos 10 eventos
 
               return eventosOutOfRange.length > 0 ? (
@@ -282,10 +287,10 @@ const PDFDocument = ({
                     return (
                       <View key={idx} style={styles.tableRow}>
                         <Text style={[styles.tableCell, { flex: 1 }]}>
-                          {new Date(evento.fecha_hora).toLocaleDateString("es-ES")}
+                          {lecturaDateValue(evento).toLocaleDateString("es-ES")}
                         </Text>
                         <Text style={[styles.tableCell, { flex: 1 }]}>
-                          {new Date(evento.fecha_hora).toLocaleTimeString("es-ES")}
+                          {lecturaDateValue(evento).toLocaleTimeString("es-ES")}
                         </Text>
                         <Text style={[styles.tableCell, { flex: 1 }]}>
                           {evento.valor} {optimalRange.unit}

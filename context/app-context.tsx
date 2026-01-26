@@ -158,6 +158,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setProcesos(procesosRes.map((p: any) => ({
         id_proceso: p.id_proceso,
         id_especie: p.id_especie,
+        id_instalacion: p.id_instalacion || 0,
         fecha_inicio: p.fecha_inicio,
         fecha_final: p.fecha_final,
         // Add extra fields if ProcesoDetallado requires them

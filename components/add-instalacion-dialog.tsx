@@ -20,6 +20,17 @@ import { useToast } from "@/hooks/use-toast"
 import { useBranches } from "@/hooks/use-branches"
 import type { Instalacion } from "@/types/instalacion"
 
+// Local form type without index signature
+interface InstalacionFormData {
+  id_empresa_sucursal: number
+  nombre_instalacion: string
+  fecha_instalacion: string
+  estado_operativo: "activo" | "inactivo"
+  descripcion: string
+  tipo_uso: "acuicultura" | "tratamiento" | "otros"
+  id_proceso: number
+}
+
 interface AddInstalacionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -32,7 +43,7 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
   const { branches, loading: loadingBranches } = useBranches()
 
   // Formulario basado en estructura REAL de BD
-  const [formData, setFormData] = useState<Omit<Instalacion, "id_instalacion">>({
+  const [formData, setFormData] = useState<InstalacionFormData>({
     id_empresa_sucursal: 1,
     nombre_instalacion: "",
     fecha_instalacion: new Date().toISOString().split("T")[0],
@@ -51,7 +62,7 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
       descripcion: "",
       tipo_uso: "acuicultura",
       id_proceso: 1,
-    })
+    } as InstalacionFormData)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,7 +90,7 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
     setLoading(true)
 
     try {
-      await onAddInstalacion(formData)
+      await onAddInstalacion(formData as unknown as Omit<Instalacion, "id_instalacion">)
 
       toast({
         title: "Éxito",
@@ -99,7 +110,7 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
     }
   }
 
-  const handleInputChange = (field: keyof Omit<Instalacion, "id_instalacion">, value: string | number) => {
+  const handleInputChange = (field: keyof InstalacionFormData, value: string | number) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -135,7 +146,7 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
                 </SelectTrigger>
                 <SelectContent>
                   {Array.isArray(branches) && branches.length > 0 ? (
-                    branches.map((b: any) => (
+                    branches.filter((b: any) => b?.tipo === "sucursal").map((b: any) => (
                       <SelectItem key={b.id} value={String(b.id)}>
                         {b.nombre || b.name || `Sucursal ${b.id}`}
                       </SelectItem>

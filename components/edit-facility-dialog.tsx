@@ -54,12 +54,12 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>
 
 interface FacilityWithBranch extends Facility {
-  branchId: string
+  branchId: string | number
   branchName: string
   branchLocation: string
   capacity?: number
   description?: string
-  speciesId?: string
+  speciesId?: string | number
 }
 
 interface EditFacilityDialogProps {
@@ -104,18 +104,18 @@ export default function EditFacilityDialog({
       reset({
         name: facility.name,
         type: facility.type as any,
-        branchId: facility.branchId,
+        branchId: String(facility.branchId),
         capacity: facility.capacity || 1000,
         description: facility.description || "",
-        speciesId: facility.speciesId || undefined,
+        speciesId: facility.speciesId ? String(facility.speciesId) : undefined,
       })
-      setOriginalBranchId(facility.branchId)
+      setOriginalBranchId(String(facility.branchId))
     }
   }, [facility, reset])
 
   // Get selected branch info
-  const selectedBranch = branches.find((b) => b.id === watchedBranchId)
-  const originalBranch = branches.find((b) => b.id === originalBranchId)
+  const selectedBranch = branches.find((b) => String(b.id) === watchedBranchId)
+  const originalBranch = branches.find((b) => String(b.id) === originalBranchId)
 
   // Filter active branches only
   const activeBranches = branches.filter((branch) => branch.status === "active")
@@ -130,7 +130,7 @@ export default function EditFacilityDialog({
 
     try {
       // Validate branch exists and is active
-      const selectedBranch = branches.find((b) => b.id === data.branchId)
+      const selectedBranch = branches.find((b) => String(b.id) === data.branchId)
       if (!selectedBranch) {
         toast({
           title: "Error de validación",
@@ -150,8 +150,8 @@ export default function EditFacilityDialog({
       }
 
       // Check if facility name already exists in the branch (excluding current facility)
-      const nameExists = selectedBranch.facilities.some(
-        (f) => f.name.toLowerCase() === data.name.toLowerCase() && f.id !== facility.id,
+      const nameExists = (selectedBranch.facilities || []).some(
+        (f) => f.name.toLowerCase() === data.name.toLowerCase() && String(f.id) !== String(facility.id),
       )
 
       if (nameExists) {
@@ -163,13 +163,23 @@ export default function EditFacilityDialog({
         return
       }
 
+      // Helper to get location string
+      const getBranchLocationStr = (branch: typeof selectedBranch) => {
+        if (!branch) return ''
+        if (typeof branch.location === 'string') return branch.location
+        if (branch.location && typeof branch.location === 'object') {
+          return `${branch.location.lat}, ${branch.location.lng}`
+        }
+        return branch.address?.street || ''
+      }
+
       const updatedFacility: FacilityWithBranch = {
         ...facility,
         name: data.name,
         type: data.type,
         branchId: data.branchId,
         branchName: selectedBranch.name,
-        branchLocation: selectedBranch.location,
+        branchLocation: getBranchLocationStr(selectedBranch),
         capacity: data.capacity,
         description: data.description || "",
         speciesId: data.speciesId,
@@ -200,10 +210,10 @@ export default function EditFacilityDialog({
       reset({
         name: facility.name,
         type: facility.type as any,
-        branchId: facility.branchId,
+        branchId: String(facility.branchId),
         capacity: facility.capacity || 1000,
         description: facility.description || "",
-        speciesId: facility.speciesId || undefined,
+        speciesId: facility.speciesId ? String(facility.speciesId) : undefined,
       })
     }
     onOpenChange(false)
@@ -306,12 +316,16 @@ export default function EditFacilityDialog({
                     </SelectItem>
                   ) : (
                     activeBranches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
+                      <SelectItem key={String(branch.id)} value={String(branch.id)}>
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4" />
                           <div>
                             <div className="font-medium">{branch.name}</div>
-                            <div className="text-xs text-muted-foreground">{branch.location}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof branch.location === 'string' ? branch.location : 
+                               branch.location ? `${branch.location.lat}, ${branch.location.lng}` : 
+                               branch.address?.street || ''}
+                            </div>
                           </div>
                         </div>
                       </SelectItem>
@@ -343,7 +357,11 @@ export default function EditFacilityDialog({
 
               {selectedBranch && !branchChanged && (
                 <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-                  <strong>Sucursal actual:</strong> {selectedBranch.name} - {selectedBranch.location}
+                  <strong>Sucursal actual:</strong> {selectedBranch.name} - {
+                    typeof selectedBranch.location === 'string' ? selectedBranch.location :
+                    selectedBranch.location ? `${selectedBranch.location.lat}, ${selectedBranch.location.lng}` :
+                    selectedBranch.address?.street || ''
+                  }
                 </div>
               )}
             </div>

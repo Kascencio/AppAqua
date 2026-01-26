@@ -272,7 +272,7 @@ function ParameterChart({
               dataKey="value"
               stroke={parameterColor}
               strokeWidth={2}
-              dot={(props: any) => {
+              dot={((props: any) => {
                 const dataPoint = chartData.find((d) => d.timestamp === props.payload?.timestamp)
                 const isOutOfRange =
                   sensorConfig?.optimal &&
@@ -282,8 +282,8 @@ function ParameterChart({
                 if (isOutOfRange || dataPoint?.status === "critical") {
                   return <circle cx={props.cx} cy={props.cy} r={4} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
                 }
-                return false // No mostrar puntos normales para línea más limpia
-              }}
+                return null // No mostrar puntos normales para línea más limpia
+              }) as any}
               activeDot={{ r: 6, stroke: parameterColor, strokeWidth: 2, fill: "#ffffff" }}
               connectNulls={false}
             />

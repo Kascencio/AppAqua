@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Plus, AlertTriangle, Fish } from "lucide-react"
-import type { Proceso, ProcesoConCalculos } from "@/types/proceso"
+import type { Proceso, ProcesoConCalculos, ProcesoDetallado } from "@/types/proceso"
 import { GenerateProcessesButton } from "@/components/generate-processes-button"
 
 export default function ProcesosPage() {
@@ -56,6 +56,18 @@ export default function ProcesosPage() {
 
   const handleViewMonitoring = (process: ProcesoConCalculos) => {
     setMonitoringProcess(process)
+  }
+
+  const toProcesoDetallado = (process: ProcesoConCalculos): ProcesoDetallado => {
+    return {
+      ...process,
+      codigo_proceso: process.codigo_proceso || `PROC-${process.id_proceso}`,
+      estado: process.estado || "activo",
+      progreso: process.progreso ?? 0,
+      descripcion: process.descripcion || "",
+      dias_originales: process.dias_originales ?? 0,
+      dias_totales: process.dias_totales ?? 0,
+    }
   }
 
   const handleExtendProcess = (process: ProcesoConCalculos) => {
@@ -115,7 +127,7 @@ export default function ProcesosPage() {
             <p className="text-muted-foreground">Monitoreo en tiempo real</p>
           </div>
         </div>
-        <ProcessMonitoringDashboard proceso={monitoringProcess} />
+        <ProcessMonitoringDashboard proceso={toProcesoDetallado(monitoringProcess)} />
       </div>
     )
   }
@@ -165,11 +177,14 @@ export default function ProcesosPage() {
           {processes.map((process) => (
             <ProcessCard
               key={process.id_proceso}
-              process={process}
-              onView={handleViewMonitoring}
+              proceso={process}
               onEdit={handleEditProcess}
-              onDelete={handleDeleteProcess}
-              onStatusChange={handleStatusChange}
+              onDelete={(id) => {
+                const proc = processes.find((p) => p.id_proceso === id)
+                if (proc) {
+                  handleDeleteProcess(proc)
+                }
+              }}
               onExtend={handleExtendProcess}
             />
           ))}

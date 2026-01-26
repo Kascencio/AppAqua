@@ -24,6 +24,20 @@ export interface ParametroMonitoreo {
   valor_actual?: number
   estado?: "normal" | "advertencia" | "critico"
   ultima_lectura?: string
+  // Extended properties for monitoring cards
+  nombre?: string
+  unidad?: string
+  rango_min?: number
+  rango_max?: number
+  promedio?: number
+  alertas_count?: number
+  lecturas?: Array<{
+    valor: number
+    timestamp: string
+    estado?: string
+    [key: string]: unknown
+  }>
+  [key: string]: unknown
 }
 
 // Legacy compatibility

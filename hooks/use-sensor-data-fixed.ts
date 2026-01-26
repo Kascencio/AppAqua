@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import type { Lectura } from "@/types"
+import { backendApi } from "@/lib/backend-client"
 
 interface SensorDataPoint {
   timestamp: string
@@ -25,17 +26,22 @@ export function useSensorDataMigrationReady(
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(
-        `/api/lecturas?sensor=${sensorId}&parametro=${parametroId}&from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`,
-      )
-      if (!response.ok) throw new Error("Error al obtener lecturas")
-      const lecturas: Lectura[] = await response.json()
+      // Nota: el backend real requiere sensorInstaladoId (camelCase). No hay soporte confirmado para filtrar por "parametroId" numérico.
+      const res = await backendApi.getLecturas({
+        sensorInstaladoId: sensorId,
+        page: 1,
+        limit: 5000,
+        desde: dateRange.from.toISOString(),
+        hasta: dateRange.to.toISOString(),
+      })
+      const payload: any = res
+      const lecturas: Lectura[] = Array.isArray(payload) ? payload : (payload.data || [])
       const formattedData = lecturas.map((lectura) => ({
-        timestamp: lectura.fecha_hora_lectura.toString(),
-        value: lectura.valor,
-        status: "normal", // TODO: Determinar status real según reglas de negocio
-        parametro_id: lectura.id_parametro,
-        unidad: lectura.unidad || "",
+        timestamp: (lectura as any).tomada_en || (lectura as any).fecha_hora_lectura?.toString() || (lectura as any).created_at || new Date().toISOString(),
+        value: Number((lectura as any).valor ?? 0),
+        status: "normal" as const, // TODO: Determinar status real según reglas de negocio
+        parametro_id: parametroId,
+        unidad: (lectura as any).unidad || (lectura as any).unidad_medida || "",
       }))
       setData(formattedData)
     } catch (err) {

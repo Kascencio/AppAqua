@@ -2,25 +2,33 @@
 
 import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
-import { Activity, AlertTriangle, Fish, Building2, Download } from "lucide-react"
+import { Activity, AlertTriangle, Fish, Building2 } from "lucide-react"
 import { useSensors } from "@/hooks/use-sensors"
-import { useProcesses } from "@/hooks/use-processes"
-import { useBranches } from "@/hooks/use-branches"
+import { useProcesos } from "@/hooks/use-procesos"
+import { useSucursales } from "@/hooks/use-sucursales"
+import type { DateRange } from "react-day-picker"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 
-export default function AnalyticsContent() {
-  const { sensors = [], loading: sensorsLoading } = useSensors()
-  const { processes = [], loading: processesLoading } = useProcesses()
-  const { branches = [], loading: branchesLoading } = useBranches()
+interface AnalyticsContentProps {
+  dateRange?: DateRange
+  sensors?: any[]
+}
+
+export default function AnalyticsContent({ dateRange, sensors: sensorsProp }: AnalyticsContentProps) {
+  const { sensors: hookSensors = [], loading: sensorsLoading } = useSensors()
+  const sensors = sensorsProp && sensorsProp.length ? sensorsProp : hookSensors
+  const { procesos: processes = [], loading: processesLoading } = useProcesos({ auto: true })
+  const { sucursales: branches = [], loading: branchesLoading } = useSucursales({ auto: true })
 
   // Memoizar datos para gráficos
   const chartData = useMemo(() => {
     if (!processes || !sensors.length) return null
 
     // Datos para gráfico de barras - procesos por estado
-    const activeProcesses = processes.filter(p => p.estado === 'activo')
+    const activeProcesses = processes.filter(p => p.estado === 'en_progreso')
     const completedProcesses = processes.filter(p => p.estado === 'completado')
     const plannedProcesses = processes.filter(p => p.estado === 'planificado')
     
@@ -57,9 +65,9 @@ export default function AnalyticsContent() {
     if (!processes || !sensors.length || !branches.length) return null
 
     const activeSensors = sensors.filter((s) => s.status === "active").length
-    const totalFacilities = branches.length // Usar branches como facilities por ahora
+    const totalFacilities = branches.length
     const alertsCount = sensors.filter((s) => s.status === "alert").length
-    const activeProcesses = processes.filter((p) => p.estado === "activo").length
+    const activeProcesses = processes.filter((p) => p.estado === "en_progreso").length
 
     return {
       totalProcesses: processes.length,
@@ -67,14 +75,15 @@ export default function AnalyticsContent() {
       totalSensors: sensors.length,
       activeSensors,
       totalFacilities,
-      activeBranches: branches.filter((b) => b.status === "active").length,
+      activeBranches: branches.filter((b) => b.activo).length,
       alertsCount,
     }
   }, [processes, sensors, branches])
 
   const isLoading = sensorsLoading || processesLoading || branchesLoading
 
-  if (isLoading) {
+  // Only show loading on initial load when there's no data yet
+  if (isLoading && !stats && !chartData) {
     return <div>Cargando analytics...</div>
   }
 
@@ -82,17 +91,20 @@ export default function AnalyticsContent() {
     return <div>No hay datos disponibles</div>
   }
 
+  const fromLabel = dateRange?.from ? format(dateRange.from, "dd MMM yyyy", { locale: es }) : "-"
+  const toLabel = dateRange?.to ? format(dateRange.to, "dd MMM yyyy", { locale: es }) : "-"
+
   return (
     <div className="container max-w-7xl mx-auto px-4 py-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+            {isLoading && <span className="text-xs text-muted-foreground animate-pulse">Actualizando...</span>}
+          </div>
           <p className="text-muted-foreground">Análisis y métricas del sistema de monitoreo acuícola</p>
+          <p className="text-xs text-muted-foreground mt-1">Período: {fromLabel} — {toLabel}</p>
         </div>
-        <Button variant="outline">
-          <Download className="mr-2 h-4 w-4" />
-          Exportar Reporte
-        </Button>
       </div>
 
       {/* Stats Cards */}
@@ -161,7 +173,13 @@ export default function AnalyticsContent() {
                   <XAxis dataKey="name" />
                   <YAxis />
                   <Tooltip />
-                  <Bar dataKey="value" fill="#3b82f6" />
+                  <Bar 
+                    dataKey="value" 
+                    fill="#3b82f6"
+                    isAnimationActive={true}
+                    animationDuration={500}
+                    animationEasing="ease-out"
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -184,6 +202,9 @@ export default function AnalyticsContent() {
                     outerRadius={80}
                     dataKey="value"
                     label={({ name, value }) => `${name}: ${value}`}
+                    isAnimationActive={true}
+                    animationDuration={500}
+                    animationEasing="ease-out"
                   >
                     {chartData.sensorChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />

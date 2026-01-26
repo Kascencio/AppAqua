@@ -4,18 +4,31 @@ export interface Especie {
   nombre: string
   fecha_creacion?: string
   estado?: "activa" | "inactiva"
+  // Additional properties from API
+  nombre_cientifico?: string
+  nombre_comun?: string
+  descripcion?: string
+  tipo_cultivo?: string
 }
 
 // Para operaciones de creación (sin ID)
 export interface EspecieCreate {
   nombre: string
   estado?: "activa" | "inactiva"
+  nombre_cientifico?: string
+  nombre_comun?: string
+  descripcion?: string
+  tipo_cultivo?: string
 }
 
 // Para operaciones de actualización
 export interface EspecieUpdate {
   nombre?: string
   estado?: "activa" | "inactiva"
+  nombre_cientifico?: string
+  nombre_comun?: string
+  descripcion?: string
+  tipo_cultivo?: string
 }
 
 // Especie con sus parámetros asociados (para vistas completas)

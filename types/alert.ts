@@ -1,7 +1,7 @@
 import type { SensorParameter } from "./sensor"
 
 export type AlertSeverity = "low" | "medium" | "high" | "critical"
-export type AlertStatus = "active" | "acknowledged" | "resolved"
+export type AlertStatus = "active" | "acknowledged" | "resolved" | "pending"
 
 export interface Alert {
   id: string

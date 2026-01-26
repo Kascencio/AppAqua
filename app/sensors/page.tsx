@@ -183,6 +183,22 @@ const generateSensorGaugeData = (sensor: any) => {
   }
 }
 
+// Helper to convert percentage (0-100) to position on semicircle arc
+// Arc goes from (20, 100) at 0% to (180, 100) at 100% with radius 80
+function getArcPosition(pct: number): { x: number; y: number } {
+  // Clamp percentage to 0-100
+  const p = Math.max(0, Math.min(100, pct))
+  // Angle in radians: 0% = PI (left), 100% = 0 (right)
+  const angle = Math.PI * (1 - p / 100)
+  const cx = 100 // center x
+  const cy = 100 // center y (baseline)
+  const r = 80   // radius
+  return {
+    x: cx + r * Math.cos(angle),
+    y: cy - r * Math.sin(angle),
+  }
+}
+
 // Simple Gauge Component with proper color sections
 const SimpleGauge = ({
   value,
@@ -201,9 +217,12 @@ const SimpleGauge = ({
   unit: string
   size?: "normal" | "large"
 }) => {
-  const percentage = ((value - min) / (max - min)) * 100
-  const optimalStartPercentage = ((optimalMin - min) / (max - min)) * 100
-  const optimalEndPercentage = ((optimalMax - min) / (max - min)) * 100
+  // Clamp value to min/max range
+  const clampedValue = Math.max(min, Math.min(max, value))
+  const range = max - min || 1
+  const percentage = Math.max(0, Math.min(100, ((clampedValue - min) / range) * 100))
+  const optimalStartPercentage = Math.max(0, Math.min(100, ((optimalMin - min) / range) * 100))
+  const optimalEndPercentage = Math.max(0, Math.min(100, ((optimalMax - min) / range) * 100))
 
   // Calculate warning zones with 20% margin
   const optimalRange = optimalMax - optimalMin
@@ -211,14 +230,14 @@ const SimpleGauge = ({
   const warningMin = optimalMin - warningMargin
   const warningMax = optimalMax + warningMargin
 
-  const warningStartPercentage = Math.max(0, ((warningMin - min) / (max - min)) * 100)
-  const warningEndPercentage = Math.min(100, ((warningMax - min) / (max - min)) * 100)
+  const warningStartPercentage = Math.max(0, Math.min(100, ((warningMin - min) / range) * 100))
+  const warningEndPercentage = Math.max(0, Math.min(100, ((warningMax - min) / range) * 100))
 
   // Determine current value color
   const getCurrentValueColor = () => {
-    if (value >= optimalMin && value <= optimalMax) {
+    if (clampedValue >= optimalMin && clampedValue <= optimalMax) {
       return "#22c55e" // Green
-    } else if ((value >= warningMin && value < optimalMin) || (value > optimalMax && value <= warningMax)) {
+    } else if ((clampedValue >= warningMin && clampedValue < optimalMin) || (clampedValue > optimalMax && clampedValue <= warningMax)) {
       return "#eab308" // Yellow
     } else {
       return "#dc2626" // Red
@@ -227,10 +246,15 @@ const SimpleGauge = ({
 
   const isLarge = size === "large"
   const gaugeHeight = isLarge ? "h-48" : "h-32"
-  const textSize = isLarge ? "text-4xl" : "text-2xl"
-  const unitSize = isLarge ? "text-xl" : "text-lg"
   const strokeWidth = isLarge ? "20" : "16"
-  const circleRadius = isLarge ? "12" : "10"
+  const circleRadius = isLarge ? 12 : 10
+
+  // Get positions using the helper
+  const indicatorPos = getArcPosition(percentage)
+  const optStartPos = getArcPosition(optimalStartPercentage)
+  const optEndPos = getArcPosition(optimalEndPercentage)
+  const warnStartPos = getArcPosition(warningStartPercentage)
+  const warnEndPos = getArcPosition(warningEndPercentage)
 
   return (
     <div className="w-full max-w-sm mx-auto">
@@ -241,15 +265,15 @@ const SimpleGauge = ({
           <path
             d="M 20 100 A 80 80 0 0 1 180 100"
             fill="none"
-            stroke="#f3f4f6"
+            stroke="#e5e7eb"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
 
           {/* Critical zones (red) - Left side */}
-          {warningStartPercentage > 0 && (
+          {warningStartPercentage > 1 && (
             <path
-              d={`M 20 100 A 80 80 0 0 1 ${20 + (warningStartPercentage / 100) * 160} ${100 - Math.sin(Math.acos((warningStartPercentage / 100) * 2 - 1)) * 80}`}
+              d={`M 20 100 A 80 80 0 0 1 ${warnStartPos.x.toFixed(2)} ${warnStartPos.y.toFixed(2)}`}
               fill="none"
               stroke="#dc2626"
               strokeWidth={strokeWidth}
@@ -258,9 +282,9 @@ const SimpleGauge = ({
           )}
 
           {/* Critical zones (red) - Right side */}
-          {warningEndPercentage < 100 && (
+          {warningEndPercentage < 99 && (
             <path
-              d={`M ${20 + (warningEndPercentage / 100) * 160} ${100 - Math.sin(Math.acos((warningEndPercentage / 100) * 2 - 1)) * 80} A 80 80 0 0 1 180 100`}
+              d={`M ${warnEndPos.x.toFixed(2)} ${warnEndPos.y.toFixed(2)} A 80 80 0 0 1 180 100`}
               fill="none"
               stroke="#dc2626"
               strokeWidth={strokeWidth}
@@ -271,7 +295,7 @@ const SimpleGauge = ({
           {/* Warning zones (yellow) - Left side */}
           {warningStartPercentage < optimalStartPercentage && (
             <path
-              d={`M ${20 + (warningStartPercentage / 100) * 160} ${100 - Math.sin(Math.acos((warningStartPercentage / 100) * 2 - 1)) * 80} A 80 80 0 0 1 ${20 + (optimalStartPercentage / 100) * 160} ${100 - Math.sin(Math.acos((optimalStartPercentage / 100) * 2 - 1)) * 80}`}
+              d={`M ${warnStartPos.x.toFixed(2)} ${warnStartPos.y.toFixed(2)} A 80 80 0 0 1 ${optStartPos.x.toFixed(2)} ${optStartPos.y.toFixed(2)}`}
               fill="none"
               stroke="#eab308"
               strokeWidth={strokeWidth}
@@ -282,7 +306,7 @@ const SimpleGauge = ({
           {/* Warning zones (yellow) - Right side */}
           {optimalEndPercentage < warningEndPercentage && (
             <path
-              d={`M ${20 + (optimalEndPercentage / 100) * 160} ${100 - Math.sin(Math.acos((optimalEndPercentage / 100) * 2 - 1)) * 80} A 80 80 0 0 1 ${20 + (warningEndPercentage / 100) * 160} ${100 - Math.sin(Math.acos((warningEndPercentage / 100) * 2 - 1)) * 80}`}
+              d={`M ${optEndPos.x.toFixed(2)} ${optEndPos.y.toFixed(2)} A 80 80 0 0 1 ${warnEndPos.x.toFixed(2)} ${warnEndPos.y.toFixed(2)}`}
               fill="none"
               stroke="#eab308"
               strokeWidth={strokeWidth}
@@ -292,40 +316,47 @@ const SimpleGauge = ({
 
           {/* Optimal range arc (green) */}
           <path
-            d={`M ${20 + (optimalStartPercentage / 100) * 160} ${100 - Math.sin(Math.acos((optimalStartPercentage / 100) * 2 - 1)) * 80} A 80 80 0 0 1 ${20 + (optimalEndPercentage / 100) * 160} ${100 - Math.sin(Math.acos((optimalEndPercentage / 100) * 2 - 1)) * 80}`}
+            d={`M ${optStartPos.x.toFixed(2)} ${optStartPos.y.toFixed(2)} A 80 80 0 0 1 ${optEndPos.x.toFixed(2)} ${optEndPos.y.toFixed(2)}`}
             fill="none"
             stroke="#22c55e"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
 
-          {/* Current value indicator */}
+          {/* Current value indicator - positioned correctly on the arc */}
           <circle
-            cx={20 + (percentage / 100) * 160}
-            cy={100 - Math.sin(Math.acos((percentage / 100) * 2 - 1)) * 80}
+            cx={indicatorPos.x}
+            cy={indicatorPos.y}
             r={circleRadius}
             fill={getCurrentValueColor()}
             stroke="white"
             strokeWidth="4"
+            style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.2))" }}
           />
 
-          {/* Center value display */}
-          <text x="100" y={isLarge ? "80" : "85"} textAnchor="middle" className={`${textSize} font-bold fill-current`}>
-            {value.toFixed(1)}
+          {/* Center value display - fixed colors for visibility */}
+          <text 
+            x="100" 
+            y={isLarge ? "75" : "80"} 
+            textAnchor="middle" 
+            className="font-bold"
+            style={{ fontSize: isLarge ? "2.5rem" : "1.75rem", fill: "#374151" }}
+          >
+            {clampedValue.toFixed(1)}
           </text>
           <text
             x="100"
-            y={isLarge ? "105" : "105"}
+            y={isLarge ? "98" : "100"}
             textAnchor="middle"
-            className={`${unitSize} fill-current opacity-60`}
+            style={{ fontSize: isLarge ? "1rem" : "0.875rem", fill: "#6b7280" }}
           >
             {unit}
           </text>
         </svg>
 
         {/* Min/Max labels */}
-        <div className="absolute bottom-0 left-0 text-xs text-gray-500">{min}</div>
-        <div className="absolute bottom-0 right-0 text-xs text-gray-500">{max}</div>
+        <div className="absolute bottom-0 left-0 text-xs font-medium text-gray-600">{min}</div>
+        <div className="absolute bottom-0 right-0 text-xs font-medium text-gray-600">{max}</div>
       </div>
     </div>
   )
@@ -372,6 +403,7 @@ const SensorRow = ({
         bgColor: "bg-green-50 border-green-200",
         status: "ÓPTIMO",
         statusColor: "text-green-700 bg-green-100",
+        titleColor: "text-green-800",
       }
     } else if (
       (currentValue >= warningMin && currentValue < optimalMin) ||
@@ -382,6 +414,7 @@ const SensorRow = ({
         bgColor: "bg-yellow-50 border-yellow-200",
         status: "ADVERTENCIA",
         statusColor: "text-yellow-700 bg-yellow-100",
+        titleColor: "text-yellow-800",
       }
     } else {
       return {
@@ -389,6 +422,7 @@ const SensorRow = ({
         bgColor: "bg-red-50 border-red-200",
         status: "CRÍTICO",
         statusColor: "text-red-700 bg-red-100",
+        titleColor: "text-red-800",
       }
     }
   }, [])
@@ -401,6 +435,7 @@ const SensorRow = ({
           bgColor: "bg-gray-50 border-gray-200",
           status: "INACTIVO",
           statusColor: "text-gray-500 bg-gray-100",
+          titleColor: "text-gray-700",
         }
   }, [isActive, gaugeData.currentValue, gaugeData.optimalMin, gaugeData.optimalMax, getStatusInfo])
 
@@ -411,7 +446,7 @@ const SensorRow = ({
       {/* Sensor info */}
       <div className="flex items-center gap-4 flex-1 min-w-0">
         <div className="min-w-0 flex-1">
-          <h5 className="font-semibold text-gray-900 dark:text-white truncate">{gaugeData.name}</h5>
+          <h5 className={`font-semibold truncate ${statusInfo.titleColor}`}>{gaugeData.name}</h5>
           <p className="text-xs text-gray-500 font-mono">ID: {sensor.id_sensor_instalado || "N/A"}</p>
         </div>
 
@@ -709,9 +744,11 @@ const SimpleSensorCard = ({
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   
   // WebSocket para actualizaciones en tiempo real
+    const instalacionId = sensor.id_instalacion || sensor.instalacion_id
   const { isConnected } = useWebSocket({
+      instalacionId: instalacionId as string,
     sensorId: sensor.id_sensor_instalado || sensor.id,
-    enabled: sensor.status === "active",
+    enabled: sensor.status === "active" && !!instalacionId,
     onMessage: (message) => {
       if (message.sensorId === String(sensor.id_sensor_instalado || sensor.id) && message.value !== undefined) {
         setRealtimeValue(message.value)
@@ -750,6 +787,7 @@ const SimpleSensorCard = ({
         bgColor: "bg-green-50 border-green-200",
         status: "ÓPTIMO",
         statusColor: "text-green-700 bg-green-100",
+        titleColor: "text-green-800",
       }
     } else if (
       (currentValue >= warningMin && currentValue < optimalMin) ||
@@ -760,6 +798,7 @@ const SimpleSensorCard = ({
         bgColor: "bg-yellow-50 border-yellow-200",
         status: "ADVERTENCIA",
         statusColor: "text-yellow-700 bg-yellow-100",
+        titleColor: "text-yellow-800",
       }
     } else {
       return {
@@ -767,6 +806,7 @@ const SimpleSensorCard = ({
         bgColor: "bg-red-50 border-red-200",
         status: "CRÍTICO",
         statusColor: "text-red-700 bg-red-100",
+        titleColor: "text-red-800",
       }
     }
   }, [])
@@ -779,6 +819,7 @@ const SimpleSensorCard = ({
           bgColor: "bg-gray-50 border-gray-200",
           status: "INACTIVO",
           statusColor: "text-gray-500 bg-gray-100",
+          titleColor: "text-gray-700",
         }
   }, [isActive, gaugeData.currentValue, gaugeData.optimalMin, gaugeData.optimalMax, getStatusInfo])
 
@@ -791,7 +832,7 @@ const SimpleSensorCard = ({
         <div className="flex justify-between items-center">
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate">{gaugeData.name}</h3>
+              <h3 className={`text-lg font-bold truncate ${statusInfo.titleColor}`}>{gaugeData.name}</h3>
               {isActive && isConnected && (
                 <div className="flex items-center gap-1">
                   <Wifi className="h-3 w-3 text-green-500" />
@@ -954,6 +995,7 @@ const AdvancedSensorCard = ({
         bgColor: "bg-green-50 border-green-200",
         status: "ÓPTIMO",
         statusColor: "text-green-700 bg-green-100",
+        titleColor: "text-green-800",
       }
     } else if (
       (currentValue >= warningMin && currentValue < optimalMin) ||
@@ -964,6 +1006,7 @@ const AdvancedSensorCard = ({
         bgColor: "bg-yellow-50 border-yellow-200",
         status: "ADVERTENCIA",
         statusColor: "text-yellow-700 bg-yellow-100",
+        titleColor: "text-yellow-800",
       }
     } else {
       return {
@@ -971,6 +1014,7 @@ const AdvancedSensorCard = ({
         bgColor: "bg-red-50 border-red-200",
         status: "CRÍTICO",
         statusColor: "text-red-700 bg-red-100",
+        titleColor: "text-red-800",
       }
     }
   }, [])
@@ -983,6 +1027,7 @@ const AdvancedSensorCard = ({
           bgColor: "bg-gray-50 border-gray-200",
           status: "INACTIVO",
           statusColor: "text-gray-500 bg-gray-100",
+          titleColor: "text-gray-700",
         }
   }, [isActive, gaugeData.currentValue, gaugeData.optimalMin, gaugeData.optimalMax, getStatusInfo])
 
@@ -994,7 +1039,7 @@ const AdvancedSensorCard = ({
       <div className="p-4 space-y-3">
         {/* Header: Parameter Name + ON/OFF Switch */}
         <div className="flex justify-between items-start">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate flex-1 mr-2">{gaugeData.name}</h3>
+          <h3 className={`text-lg font-bold truncate flex-1 mr-2 ${statusInfo.titleColor}`}>{gaugeData.name}</h3>
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -1167,7 +1212,7 @@ const AdvancedSensorCard = ({
 
 export default function SensorsPage() {
   const { branches, loading: loadingBranches } = useBranches()
-  const { sensors, loading: loadingSensors, createSensor, updateSensor, deleteSensor, getNextSensorId } = useSensors()
+  const { sensors, loading: loadingSensors, createSensor, updateSensor, deleteSensor } = useSensors()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState("todos")
   const [selectedStatus, setSelectedStatus] = useState("todos")
@@ -1317,7 +1362,11 @@ export default function SensorsPage() {
   const handleUpdateSensor = useCallback(
     async (sensorData: Partial<SensorCompleto>) => {
       try {
-        await updateSensor(sensorData)
+        const id = Number((sensorData as any).id_sensor_instalado ?? (sensorData as any).id)
+        if (!id) {
+          throw new Error("ID de sensor inválido")
+        }
+        await updateSensor({ ...sensorData, id_sensor_instalado: id })
         toast({
           title: "Sensor actualizado",
           description: "El sensor ha sido actualizado exitosamente.",
@@ -1332,6 +1381,15 @@ export default function SensorsPage() {
       }
     },
     [updateSensor, toast],
+  )
+
+  const getNextSensorId = useCallback(
+    (type: string) => {
+      const prefix = type ? type.substring(0, 3).toUpperCase() : "SEN"
+      const count = sensors.filter((s) => (s.type || "").toLowerCase().includes(type.toLowerCase())).length
+      return `${prefix}-${String(count + 1).padStart(3, "0")}`
+    },
+    [sensors],
   )
 
   // Handle editing a sensor
@@ -1379,7 +1437,9 @@ export default function SensorsPage() {
     [toast],
   )
 
-  if (loadingBranches || loadingSensors) {
+  // Evitar "parpadeo" de toda la página durante refrescos periódicos:
+  // mostramos pantalla de carga solo en el primer load (cuando aún no hay datos).
+  if ((loadingBranches && branches.length === 0) || (loadingSensors && sensors.length === 0)) {
     return (
       <div className="container max-w-7xl mx-auto px-4 py-6 flex items-center justify-center h-96">
         <div className="flex flex-col items-center gap-2">

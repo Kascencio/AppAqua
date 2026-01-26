@@ -516,7 +516,7 @@ export const generateSucursalesPdfReport = (
             const sensorInfo = catalogoSensores.find((cat) => cat.id_sensor === sensor.id_sensor)
             const sensorLecturas = lecturas
               .filter((lectura) => lectura.id_sensor_instalado === sensor.id_sensor_instalado)
-              .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())
+              .sort((a, b) => new Date(b.fecha_hora || `${b.fecha}T${b.hora}`).getTime() - new Date(a.fecha_hora || `${a.fecha}T${a.hora}`).getTime())
 
             const ultimaLectura = sensorLecturas[0]
             const penultimaLectura = sensorLecturas[1]
@@ -571,7 +571,7 @@ export const generateSucursalesPdfReport = (
 
               return lectura.valor < optimalRange.min || lectura.valor > optimalRange.max
             })
-            .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())
+            .sort((a, b) => new Date(b.fecha_hora || `${b.fecha}T${b.hora}`).getTime() - new Date(a.fecha_hora || `${a.fecha}T${a.hora}`).getTime())
             .slice(0, 10) // Last 10 events
 
           htmlContent += `
@@ -613,8 +613,8 @@ export const generateSucursalesPdfReport = (
 
               htmlContent += `
                 <tr>
-                  <td>${new Date(evento.fecha_hora).toLocaleDateString("es-ES")}</td>
-                  <td>${new Date(evento.fecha_hora).toLocaleTimeString("es-ES")}</td>
+                  <td>${new Date(evento.fecha_hora || `${evento.fecha}T${evento.hora}`).toLocaleDateString("es-ES")}</td>
+                  <td>${new Date(evento.fecha_hora || `${evento.fecha}T${evento.hora}`).toLocaleTimeString("es-ES")}</td>
                   <td>${sensorInfo?.sensor || "Desconocido"}</td>
                   <td><strong>${evento.valor}</strong> ${optimalRange.unit}</td>
                   <td><span class="status-${status.status.toLowerCase().replace("ó", "o")}">${status.status}</span></td>
@@ -781,7 +781,7 @@ export const generateInstalacionesPdfReport = (
               lecturas.filter(
                 (l) =>
                   instalacionSensores.some((s) => s.id_sensor_instalado === l.id_sensor_instalado) &&
-                  new Date(l.fecha_hora).toDateString() === new Date().toDateString(),
+                  new Date(l.fecha_hora || `${l.fecha}T${l.hora}`).toDateString() === new Date().toDateString(),
               ).length
             }</div>
           </div>
@@ -825,7 +825,7 @@ export const generateInstalacionesPdfReport = (
         const sensorInfo = catalogoSensores.find((cat) => cat.id_sensor === sensor.id_sensor)
         const sensorLecturas = lecturas
           .filter((lectura) => lectura.id_sensor_instalado === sensor.id_sensor_instalado)
-          .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())
+          .sort((a, b) => new Date(b.fecha_hora || `${b.fecha}T${b.hora}`).getTime() - new Date(a.fecha_hora || `${a.fecha}T${a.hora}`).getTime())
 
         const ultimaLectura = sensorLecturas[0]
         const penultimaLectura = sensorLecturas[1]
@@ -880,7 +880,7 @@ export const generateInstalacionesPdfReport = (
 
           return lectura.valor < optimalRange.min || lectura.valor > optimalRange.max
         })
-        .sort((a, b) => new Date(b.fecha_hora).getTime() - new Date(a.fecha_hora).getTime())
+        .sort((a, b) => new Date(b.fecha_hora || `${b.fecha}T${b.hora}`).getTime() - new Date(a.fecha_hora || `${a.fecha}T${a.hora}`).getTime())
         .slice(0, 15) // Last 15 events
 
       htmlContent += `
@@ -922,8 +922,8 @@ export const generateInstalacionesPdfReport = (
 
           htmlContent += `
             <tr>
-              <td>${new Date(evento.fecha_hora).toLocaleDateString("es-ES")}</td>
-              <td>${new Date(evento.fecha_hora).toLocaleTimeString("es-ES")}</td>
+              <td>${new Date(evento.fecha_hora || `${evento.fecha}T${evento.hora}`).toLocaleDateString("es-ES")}</td>
+              <td>${new Date(evento.fecha_hora || `${evento.fecha}T${evento.hora}`).toLocaleTimeString("es-ES")}</td>
               <td>${sensorInfo?.sensor || "Desconocido"}</td>
               <td><strong>${evento.valor}</strong> ${optimalRange.unit}</td>
               <td><span class="status-${status.status.toLowerCase().replace("ó", "o")}">${status.status}</span></td>

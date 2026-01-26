@@ -1,11 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import type { LucideIcon } from "lucide-react"
 import { Droplets, Thermometer, Activity, Waves, Gauge, FlaskConical } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 
+type ParameterItem = {
+  id: string
+  name: string
+  value: number
+  unit: string
+  min: number
+  max: number
+  icon: LucideIcon
+  color: string
+}
+
 // Mock parameter data
-const parameterData = {
+const parameterData: Record<string, ParameterItem[]> = {
   "inst-001": [
     {
       id: "temp",
@@ -117,7 +129,7 @@ export function ParameterStats() {
   }, [selectedInstallation])
 
   // Function to calculate percentage within range
-  const calculatePercentage = (value, min, max) => {
+  const calculatePercentage = (value: number, min: number, max: number) => {
     if (value < min) return 0
     if (value > max) return 100
     return ((value - min) / (max - min)) * 100

@@ -9,7 +9,7 @@ import { Activity, AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
-import { useSensorData } from "@/hooks/use-sensor-data"
+import { backendApi, type Lectura as BackendLectura } from "@/lib/backend-client"
 
 interface ProcessSensorChartProps {
   sensorId: string
@@ -87,10 +87,28 @@ export function ProcessSensorChart({
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`/api/lecturas?instalacion=${facilityId}&sensor=${sensorId}&parametro=${parameter}&from=${dateRange.from.toISOString()}&to=${dateRange.to.toISOString()}`)
-        if (!res.ok) throw new Error("Error al obtener lecturas")
-        const data = await res.json()
-        setChartData(data || [])
+        const resp = await backendApi.getLecturas({
+          sensorInstaladoId: Number(sensorId),
+          page: 1,
+          limit: 5000,
+          desde: dateRange.from.toISOString(),
+          hasta: dateRange.to.toISOString(),
+        })
+
+        const payload: any = resp
+        const lecturas: BackendLectura[] = Array.isArray(payload) ? payload : (payload.data || [])
+
+        const mapped = lecturas
+          .map((l) => {
+            const ts = (l as any).tomada_en || ((l as any).fecha && (l as any).hora ? `${(l as any).fecha}T${(l as any).hora}` : (l as any).created_at)
+            const timestamp = ts ? new Date(ts).toISOString() : new Date().toISOString()
+            const value = Number((l as any).valor ?? 0)
+            const status = value < range.min || value > range.max ? "critical" : "normal"
+            return { timestamp, value, status }
+          })
+          .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
+        setChartData(mapped)
       } catch {
         setError("Error al obtener lecturas")
       } finally {

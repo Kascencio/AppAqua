@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import ProcesoForm from "@/components/proceso-form"
+import { ProcesoForm } from "@/components/proceso-form"
 
 interface AddProcessDialogProps {
   onProcessCreated?: (process: any) => void
@@ -44,7 +44,7 @@ export function AddProcessDialog({ onProcessCreated }: AddProcessDialogProps) {
             proceso se generará automáticamente.
           </DialogDescription>
         </DialogHeader>
-        <ProcesoForm onSuccess={handleSuccess} onCancel={handleCancel} />
+        <ProcesoForm onSubmit={handleSuccess} />
       </DialogContent>
     </Dialog>
   )

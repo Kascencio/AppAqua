@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
 import { JWTUtils } from "@/lib/auth-utils"
+import { parseDateForPrisma } from "@/lib/date-utils"
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,8 +41,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "id_especie, fecha_inicio, fecha_final requeridos" }, { status: 400 })
     }
 
-    const fechaInicio = new Date(body.fecha_inicio)
-    const fechaFinal = new Date(body.fecha_final)
+    const fechaInicio = parseDateForPrisma(body.fecha_inicio)
+    const fechaFinal = parseDateForPrisma(body.fecha_final)
+
+    if (!fechaInicio || !fechaFinal) {
+      return NextResponse.json({ error: "Formato de fecha inválido" }, { status: 400 })
+    }
 
     // 🔒 VALIDAR RANGO DE FECHAS
     if (fechaFinal <= fechaInicio) {
@@ -156,8 +161,12 @@ export async function PUT(request: NextRequest) {
 
     // 🔒 VALIDAR RANGO DE FECHAS si se están actualizando
     if (body.fecha_inicio && body.fecha_final) {
-      const fechaInicio = new Date(body.fecha_inicio)
-      const fechaFinal = new Date(body.fecha_final)
+      const fechaInicio = parseDateForPrisma(body.fecha_inicio)
+      const fechaFinal = parseDateForPrisma(body.fecha_final)
+
+      if (!fechaInicio || !fechaFinal) {
+        return NextResponse.json({ error: "Formato de fecha inválido" }, { status: 400 })
+      }
 
       if (fechaFinal <= fechaInicio) {
         return NextResponse.json(

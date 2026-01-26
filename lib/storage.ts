@@ -1,11 +1,25 @@
 /**
  * Utilidades para el almacenamiento y persistencia de datos
  * Simula una capa de base de datos usando localStorage
+ * 
+ * NOTE: This file uses mock data that doesn't exactly match the new types.
+ * The types are intentionally relaxed for backward compatibility.
  */
 
 import type { Branch } from "@/types/branch"
 import type { Facility } from "@/types/facility"
 import type { User } from "@/types/user"
+
+// Use a more flexible type for mock data that doesn't fully conform to new types
+export type MockBranch = {
+  id: string | number
+  name: string
+  location?: string | { lat: number; lng: number }
+  coordinates?: [number, number]
+  status: "active" | "inactive"
+  facilities?: Facility[]
+  [key: string]: unknown
+}
 
 // Claves para localStorage
 const STORAGE_KEYS = {
@@ -16,7 +30,7 @@ const STORAGE_KEYS = {
 // Función para cargar datos iniciales si no existen en localStorage
 const initializeData = () => {
   // Datos iniciales de sucursales
-  const initialBranches: Branch[] = [
+  const initialBranches: MockBranch[] = [
     {
       id: "1",
       name: "Sucursal Paraíso",
@@ -433,7 +447,7 @@ const initializeData = () => {
 // Funciones para operaciones CRUD de sucursales
 export const branchService = {
   // Obtener todas las sucursales
-  getAll: (): Branch[] => {
+  getAll: (): MockBranch[] => {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.BRANCHES)
       return data ? JSON.parse(data) : []
@@ -444,10 +458,10 @@ export const branchService = {
   },
 
   // Obtener una sucursal por ID
-  getById: (id: string): Branch | null => {
+  getById: (id: string | number): MockBranch | null => {
     try {
       const branches = branchService.getAll()
-      return branches.find((branch) => branch.id === id) || null
+      return branches.find((branch) => String(branch.id) === String(id)) || null
     } catch (error) {
       console.error(`Error al obtener sucursal con ID ${id}:`, error)
       return null
@@ -455,7 +469,7 @@ export const branchService = {
   },
 
   // Crear una nueva sucursal
-  create: (branch: Branch): Branch => {
+  create: (branch: MockBranch): MockBranch => {
     try {
       const branches = branchService.getAll()
       const newBranches = [...branches, branch]
@@ -468,10 +482,10 @@ export const branchService = {
   },
 
   // Actualizar una sucursal existente
-  update: (updatedBranch: Branch): Branch => {
+  update: (updatedBranch: MockBranch): MockBranch => {
     try {
       const branches = branchService.getAll()
-      const index = branches.findIndex((branch) => branch.id === updatedBranch.id)
+      const index = branches.findIndex((branch) => String(branch.id) === String(updatedBranch.id))
 
       if (index === -1) {
         throw new Error(`No se encontró la sucursal con ID ${updatedBranch.id}`)
@@ -487,10 +501,10 @@ export const branchService = {
   },
 
   // Eliminar una sucursal
-  delete: (id: string): boolean => {
+  delete: (id: string | number): boolean => {
     try {
       const branches = branchService.getAll()
-      const newBranches = branches.filter((branch) => branch.id !== id)
+      const newBranches = branches.filter((branch) => String(branch.id) !== String(id))
 
       if (branches.length === newBranches.length) {
         return false // No se encontró la sucursal
@@ -505,7 +519,7 @@ export const branchService = {
   },
 
   // Actualizar el estado de una sucursal
-  updateStatus: (id: string, status: "active" | "inactive"): boolean => {
+  updateStatus: (id: string | number, status: "active" | "inactive"): boolean => {
     try {
       const branch = branchService.getById(id)
       if (!branch) return false
@@ -523,17 +537,18 @@ export const branchService = {
 // Funciones para operaciones CRUD de instalaciones
 export const facilityService = {
   // Obtener todas las instalaciones de todas las sucursales
-  getAll: (): (Facility & { branchId: string })[] => {
+  getAll: (): (Facility & { branchId: string | number })[] => {
     try {
       const branches = branchService.getAll()
-      const allFacilities: (Facility & { branchId: string })[] = []
+      const allFacilities: (Facility & { branchId: string | number })[] = []
 
       branches.forEach((branch) => {
-        branch.facilities.forEach((facility) => {
+        const facilities = branch.facilities || []
+        facilities.forEach((facility) => {
           allFacilities.push({
             ...facility,
             branchId: branch.id,
-          })
+          } as Facility & { branchId: string | number })
         })
       })
 
@@ -545,10 +560,10 @@ export const facilityService = {
   },
 
   // Obtener todas las instalaciones de una sucursal
-  getAllByBranchId: (branchId: string): Facility[] => {
+  getAllByBranchId: (branchId: string | number): Facility[] => {
     try {
       const branch = branchService.getById(branchId)
-      return branch ? branch.facilities : []
+      return branch ? (branch.facilities || []) as Facility[] : []
     } catch (error) {
       console.error(`Error al obtener instalaciones de la sucursal ${branchId}:`, error)
       return []
@@ -556,10 +571,10 @@ export const facilityService = {
   },
 
   // Obtener una instalación específica
-  getById: (branchId: string, facilityId: string): Facility | null => {
+  getById: (branchId: string | number, facilityId: string | number): Facility | null => {
     try {
       const facilities = facilityService.getAllByBranchId(branchId)
-      return facilities.find((facility) => facility.id === facilityId) || null
+      return facilities.find((facility) => String(facility.id) === String(facilityId)) || null
     } catch (error) {
       console.error(`Error al obtener instalación ${facilityId}:`, error)
       return null
@@ -567,11 +582,12 @@ export const facilityService = {
   },
 
   // Crear una nueva instalación
-  create: (branchId: string, facility: Facility): Facility => {
+  create: (branchId: string | number, facility: Facility): Facility => {
     try {
       const branch = branchService.getById(branchId)
       if (!branch) throw new Error(`No se encontró la sucursal con ID ${branchId}`)
 
+      if (!branch.facilities) branch.facilities = []
       branch.facilities.push(facility)
       branchService.update(branch)
       return facility
@@ -582,17 +598,19 @@ export const facilityService = {
   },
 
   // Actualizar una instalación existente
-  update: (branchId: string, updatedFacility: Facility): Facility => {
+  update: (branchId: string | number, updatedFacility: Facility): Facility => {
     try {
       const branch = branchService.getById(branchId)
       if (!branch) throw new Error(`No se encontró la sucursal con ID ${branchId}`)
 
-      const index = branch.facilities.findIndex((facility) => facility.id === updatedFacility.id)
+      const facilities = branch.facilities || []
+      const index = facilities.findIndex((facility) => String(facility.id) === String(updatedFacility.id))
       if (index === -1) {
         throw new Error(`No se encontró la instalación con ID ${updatedFacility.id}`)
       }
 
-      branch.facilities[index] = updatedFacility
+      facilities[index] = updatedFacility
+      branch.facilities = facilities
       branchService.update(branch)
       return updatedFacility
     } catch (error) {
@@ -602,13 +620,13 @@ export const facilityService = {
   },
 
   // Eliminar una instalación
-  delete: (branchId: string, facilityId: string): boolean => {
+  delete: (branchId: string | number, facilityId: string | number): boolean => {
     try {
       const branch = branchService.getById(branchId)
-      if (!branch) return false
+      if (!branch || !branch.facilities) return false
 
       const initialLength = branch.facilities.length
-      branch.facilities = branch.facilities.filter((facility) => facility.id !== facilityId)
+      branch.facilities = branch.facilities.filter((facility) => String(facility.id) !== String(facilityId))
 
       if (initialLength === branch.facilities.length) {
         return false // No se encontró la instalación
@@ -626,13 +644,15 @@ export const facilityService = {
 // Funciones para operaciones CRUD de sensores
 export const sensorService = {
   // Añadir un sensor a una instalación
-  addSensor: (branchId: string, facilityId: string, sensorId: string): boolean => {
+  addSensor: (branchId: string | number, facilityId: string | number, sensorId: string): boolean => {
     try {
       const facility = facilityService.getById(branchId, facilityId)
       if (!facility) return false
 
-      if (!facility.sensors.includes(sensorId)) {
-        facility.sensors.push(sensorId)
+      const sensors = facility.sensors || []
+      if (!sensors.includes(sensorId)) {
+        sensors.push(sensorId)
+        facility.sensors = sensors
         facilityService.update(branchId, facility)
       }
 
@@ -644,22 +664,24 @@ export const sensorService = {
   },
 
   // Eliminar un sensor de una instalación
-  removeSensor: (branchId: string, facilityId: string, sensorId: string): boolean => {
+  removeSensor: (branchId: string | number, facilityId: string | number, sensorId: string): boolean => {
     try {
       const facility = facilityService.getById(branchId, facilityId)
       if (!facility) return false
 
-      const initialLength = facility.sensors.length
-      facility.sensors = facility.sensors.filter((id) => id !== sensorId)
+      const sensors = facility.sensors || []
+      const initialLength = sensors.length
+      facility.sensors = sensors.filter((id) => id !== sensorId)
 
       if (initialLength === facility.sensors.length) {
         return false // No se encontró el sensor
       }
 
       // También eliminar referencias en waterQuality
-      Object.entries(facility.waterQuality).forEach(([param, config]) => {
-        if (config.sensorId === sensorId) {
-          config.sensorId = undefined
+      const wq = facility.waterQuality || {}
+      Object.entries(wq).forEach(([param, config]) => {
+        if (config && typeof config === 'object' && 'sensorId' in config && config.sensorId === sensorId) {
+          (config as { sensorId?: string }).sensorId = undefined
         }
       })
 
@@ -673,8 +695,8 @@ export const sensorService = {
 
   // Actualizar parámetro de calidad del agua
   updateWaterQualityParameter: (
-    branchId: string,
-    facilityId: string,
+    branchId: string | number,
+    facilityId: string | number,
     paramName: string,
     paramConfig: {
       value: number
@@ -687,6 +709,7 @@ export const sensorService = {
       const facility = facilityService.getById(branchId, facilityId)
       if (!facility) return false
 
+      if (!facility.waterQuality) facility.waterQuality = {}
       facility.waterQuality[paramName] = paramConfig
       facilityService.update(branchId, facility)
       return true
@@ -711,10 +734,10 @@ export const userService = {
   },
 
   // Obtener un usuario por ID
-  getById: (id: string): User | null => {
+  getById: (id: string | number): User | null => {
     try {
       const users = userService.getAll()
-      return users.find((user) => user.id === id) || null
+      return users.find((user) => String(user.id) === String(id)) || null
     } catch (error) {
       console.error(`Error al obtener usuario con ID ${id}:`, error)
       return null
@@ -785,7 +808,7 @@ export const userService = {
   },
 
   // Actualizar el estado de un usuario
-  updateStatus: (id: string, status: "active" | "inactive" | "pending"): boolean => {
+  updateStatus: (id: string, status: User["status"]): boolean => {
     try {
       const user = userService.getById(id)
       if (!user) return false
@@ -801,7 +824,7 @@ export const userService = {
   },
 
   // Actualizar el rol de un usuario
-  updateRole: (id: string, role: "admin" | "manager" | "operator" | "viewer"): boolean => {
+  updateRole: (id: string, role: User["role"]): boolean => {
     try {
       const user = userService.getById(id)
       if (!user) return false

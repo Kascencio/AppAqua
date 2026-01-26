@@ -28,7 +28,6 @@ export async function GET(request: NextRequest) {
       where: { id_usuario: decoded.id_usuario },
       include: {
         tipo_rol: true,
-        asignacion_usuario: true,
       },
     })
 
@@ -39,9 +38,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const branchAccess = user.asignacion_usuario
-      .filter(a => a.id_empresa_sucursal !== null)
-      .map(a => String(a.id_empresa_sucursal))
+    // Obtener asignaciones
+    const asignaciones = await prisma.asignacion_usuario.findMany({
+      where: { id_usuario: decoded.id_usuario },
+      select: {
+        id_organizacion_sucursal: true,
+        id_instalacion: true
+      }
+    })
+
+    const branchAccess = asignaciones
+      .filter(a => a.id_organizacion_sucursal !== null)
+      .map(a => String(a.id_organizacion_sucursal))
 
     const userData = {
       id: String(user.id_usuario),

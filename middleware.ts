@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server'
 // Rutas que requieren autenticación
 const protectedRoutes = [
   '/',
+  '/organizaciones',
   '/sucursales',
   '/instalaciones',
   '/sensors',
@@ -65,6 +66,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
+    '/((?!api|external-api|external-health|health|_next/static|_next/image|favicon.ico|public).*)',
   ],
 }

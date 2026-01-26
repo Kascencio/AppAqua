@@ -69,8 +69,7 @@ export async function POST(request: NextRequest) {
     const rolExistente = await prisma.tipo_rol.findFirst({
       where: { 
         nombre: {
-          equals: body.nombre.trim(),
-          mode: 'insensitive'
+          equals: body.nombre.trim()
         }
       }
     })
@@ -167,8 +166,7 @@ export async function PUT(request: NextRequest) {
       const nombreDuplicado = await prisma.tipo_rol.findFirst({
         where: { 
           nombre: {
-            equals: body.nombre.trim(),
-            mode: 'insensitive'
+            equals: body.nombre.trim()
           },
           NOT: { id_rol: Number(id) }
         }

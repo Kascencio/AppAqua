@@ -160,7 +160,20 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
           Rmax: config.Rmax,
         }))
 
-      await updateSpecies(species.id_especie, formData, nuevosParametros)
+      // Merge formData with parameters for the updateSpecies call
+      const updateData = {
+        nombre: formData.nombre_comun || '',
+        nombre_cientifico: formData.nombre_cientifico,
+        tipo_cultivo: formData.tipo_cultivo,
+        estado: formData.estado,
+        parametros: parameterConfigs.map((config) => ({
+          id_parametro: config.id_parametro,
+          rango_min: config.Rmin,
+          rango_max: config.Rmax,
+        })),
+      }
+
+      await updateSpecies(species.id_especie, updateData)
 
       toast.success("Especie actualizada correctamente")
       onOpenChange(false)
@@ -231,7 +244,7 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
               <Label htmlFor="estado">Estado</Label>
               <Select
                 value={formData.estado}
-                onValueChange={(value: "activo" | "inactivo") => setFormData({ ...formData, estado: value })}
+                onValueChange={(value: "activa" | "inactiva") => setFormData({ ...formData, estado: value })}
               >
                 <SelectTrigger>
                   <SelectValue />

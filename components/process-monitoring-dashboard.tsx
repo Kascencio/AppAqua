@@ -67,8 +67,7 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
   const { parametros, loading, error, lastUpdated, refresh } = useLecturasPorProceso(
     proceso.id_proceso,
     inicio,
-    fin,
-    isRealTime ? 30000 : undefined // Intervalo de refetch solo en tiempo real
+    fin
   )
 
   const getPeriodoLabel = () => {
@@ -101,7 +100,7 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
     const normal = parametros.filter((p) => p.estado === "normal").length
     const advertencia = parametros.filter((p) => p.estado === "advertencia").length
     const critico = parametros.filter((p) => p.estado === "critico").length
-    const totalAlertas = parametros.reduce((sum, p) => sum + p.alertas_count, 0)
+    const totalAlertas = parametros.reduce((sum, p) => sum + (p.alertas_count ?? 0), 0)
     return { total, normal, advertencia, critico, totalAlertas }
   }
   const stats = getParameterStats()
@@ -250,7 +249,7 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
           ) : parametros.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {parametros.map((parametro) => (
-                <ParameterMonitoringCard key={parametro.nombre} parametro={parametro} />
+                <ParameterMonitoringCard key={parametro.nombre ?? parametro.nombre_parametro} parametro={parametro} />
               ))}
             </div>
           ) : (
@@ -286,16 +285,16 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
           ) : parametros.length > 0 ? (
             <div className="space-y-4">
               {parametros.map((parametro) => (
-                <Card key={parametro.nombre}>
+                <Card key={parametro.nombre ?? parametro.nombre_parametro}>
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
-                        {getParameterIcon(parametro.nombre)}
-                        <h3 className="text-lg font-semibold">{parametro.nombre}</h3>
-                        <span className="text-sm text-muted-foreground">({parametro.unidad})</span>
+                        {getParameterIcon(parametro.nombre ?? parametro.nombre_parametro)}
+                        <h3 className="text-lg font-semibold">{parametro.nombre ?? parametro.nombre_parametro}</h3>
+                        <span className="text-sm text-muted-foreground">({parametro.unidad ?? parametro.unidad_medida})</span>
                       </div>
                       <div
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(parametro.estado)}`}
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(parametro.estado ?? "normal")}`}
                       >
                         {parametro.estado === "normal" && "✓ Normal"}
                         {parametro.estado === "advertencia" && "⚠️ Advertencia"}
@@ -306,22 +305,22 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
                       <div>
                         <span className="font-medium text-muted-foreground">Promedio:</span>
                         <div className="text-lg font-semibold">
-                          {parametro.promedio.toFixed(2)} {parametro.unidad}
+                          {(parametro.promedio ?? 0).toFixed(2)} {parametro.unidad ?? parametro.unidad_medida}
                         </div>
                       </div>
                       <div>
                         <span className="font-medium text-muted-foreground">Rango Óptimo:</span>
                         <div className="text-lg font-semibold">
-                          {parametro.rango_min} - {parametro.rango_max}
+                          {parametro.rango_min ?? 0} - {parametro.rango_max ?? 0}
                         </div>
                       </div>
                       <div>
                         <span className="font-medium text-muted-foreground">Lecturas:</span>
-                        <div className="text-lg font-semibold">{parametro.lecturas.length}</div>
+                        <div className="text-lg font-semibold">{(parametro.lecturas || []).length}</div>
                       </div>
                       <div>
                         <span className="font-medium text-muted-foreground">Alertas:</span>
-                        <div className="text-lg font-semibold text-red-600">{parametro.alertas_count}</div>
+                        <div className="text-lg font-semibold text-red-600">{parametro.alertas_count ?? 0}</div>
                       </div>
                     </div>
                   </CardContent>

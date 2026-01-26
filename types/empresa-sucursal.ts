@@ -26,7 +26,7 @@ export interface EmpresaSucursalCompleta extends EmpresaSucursal {
   padre?: string
 }
 
-// Legacy compatibility
+// Legacy compatibility - includes all properties from old Branch type for backward compatibility
 export interface Branch extends EmpresaSucursal {
   // Mapeo de campos legacy a nuevos
   id: number
@@ -49,6 +49,17 @@ export interface Branch extends EmpresaSucursal {
     lat: number
     lng: number
   }
+  // Properties from old types/branch.ts for compatibility
+  coordinates?: [number, number] // [latitude, longitude]
+  facilities?: Array<{
+    id: string | number
+    name: string
+    type?: string
+    status?: "active" | "inactive" | "maintenance" | string
+    sensors?: unknown[]
+    parameters?: unknown[]
+    [key: string]: unknown
+  }>
 }
 
 // Función para convertir EmpresaSucursal a Branch (legacy)

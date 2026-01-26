@@ -167,7 +167,12 @@ interface MapComponentProps {
 }
 
 export default function MapComponent({ branches, center = [17.9869, -92.9303], onBranchSelect, flyToPosition = null }: MapComponentProps) {
-  const [activeMarker, setActiveMarker] = useState<string | null>(null)
+  const [activeMarker, setActiveMarker] = useState<string | number | null>(null)
+  
+  // Filter branches that have valid coordinates
+  const branchesWithCoords = branches.filter((b): b is Branch & { coordinates: [number, number] } => 
+    Array.isArray(b.coordinates) && b.coordinates.length === 2
+  )
   const mapRef = useRef<L.Map | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [mapType, setMapType] = useState<string>("street")
@@ -267,9 +272,11 @@ export default function MapComponent({ branches, center = [17.9869, -92.9303], o
         style={{ height: "100%", width: "100%", zIndex: 1 }}
         attributionControl={false}
         zoomControl={false} // Desactivamos el control de zoom predeterminado para posicionarlo mejor
-        whenCreated={(map) => {
-          mapRef.current = map
-          setTimeout(() => map.invalidateSize(), 250)
+        ref={(map) => {
+          if (map) {
+            mapRef.current = map
+            setTimeout(() => map.invalidateSize(), 250)
+          }
         }}
         className="leaflet-map-container"
       >
@@ -295,7 +302,7 @@ export default function MapComponent({ branches, center = [17.9869, -92.9303], o
 
           <LayersControl.Overlay name="Áreas de cobertura">
             <FeatureGroup>
-              {branches.map((branch) => (
+              {branchesWithCoords.map((branch) => (
                 <Circle
                   key={`circle-${branch.id}`}
                   center={branch.coordinates}
@@ -314,7 +321,7 @@ export default function MapComponent({ branches, center = [17.9869, -92.9303], o
 
         <MarkerClusterGroup
           chunkedLoading
-          iconCreateFunction={(cluster) => {
+          iconCreateFunction={(cluster: { getChildCount: () => number }) => {
             const childCount = cluster.getChildCount()
             let className = "marker-cluster-"
 
@@ -333,7 +340,7 @@ export default function MapComponent({ branches, center = [17.9869, -92.9303], o
             })
           }}
         >
-          {branches.map((branch) => {
+          {branchesWithCoords.map((branch) => {
             const hasAlerts = branchHasAlerts(branch)
             const facilities = branch.facilities || []
             const sensorsTotal = facilities.reduce((total, facility) => total + ((facility as any).sensors?.length || 0), 0)
@@ -345,7 +352,7 @@ export default function MapComponent({ branches, center = [17.9869, -92.9303], o
                 eventHandlers={{
                   click: () => {
                     setActiveMarker(branch.id)
-                    onBranchSelect(branch.id)
+                    onBranchSelect(String(branch.id))
                   },
                 }}
               >
@@ -354,7 +361,7 @@ export default function MapComponent({ branches, center = [17.9869, -92.9303], o
                     <div className="p-3">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-medium text-base">{branch.name}</h3>
-                        <Badge variant={branch.status === "active" ? "success" : "secondary"}>
+                        <Badge variant={branch.status === "active" ? "default" : "secondary"}>
                           {branch.status === "active" ? "Activa" : "Inactiva"}
                         </Badge>
                       </div>

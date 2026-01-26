@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { format } from "date-fns"
 import { AlertTriangle, TrendingUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { useSensorDataMultiple, useFacilitySensors } from "@/hooks/use-sensor-data"
+import { useSensorDataMultiple, useFacilitySensors, useSensorData } from "@/hooks/use-sensor-data"
 import {
   getParameterName,
   getParameterColor,
@@ -19,8 +19,15 @@ import {
 import React from "react"
 
 interface HistoricalMonitoringChartProps {
-  processId: string
-  facilityId: string
+  // Props para modo multi-sensor (requiere facilityId)
+  processId?: string
+  facilityId?: string
+  // Props para modo single-sensor (requiere sensorId)
+  sensorId?: string | number
+  parameter?: string
+  unit?: string
+  color?: string
+  // Props comunes
   dateRange: { from: Date; to: Date }
   height?: number
   compact?: boolean
@@ -106,23 +113,57 @@ const MultiParameterTooltip = ({ active, payload, label, facilitySensors }: any)
 export function HistoricalMonitoringChart({
   processId,
   facilityId,
+  sensorId,
+  parameter,
+  unit,
+  color,
   dateRange,
   height = 300,
   compact = false,
 }: HistoricalMonitoringChartProps) {
-  const facilitySensors = useFacilitySensors(facilityId)
-  const parameters = facilitySensors?.map((s) => s.parameter) || []
+  // Modo single sensor: usar useSensorData directamente
+  const singleSensorData = useSensorData(
+    sensorId ? String(sensorId) : '',
+    dateRange.from,
+    dateRange.to
+  )
+  
+  // Modo multi-sensor: usar useFacilitySensors + useSensorDataMultiple
+  const facilitySensors = useFacilitySensors(facilityId || '')
+  const parameters = facilityId ? (facilitySensors?.map((s) => s.parameter) || []) : []
 
-  const { readings, loading, error } = useSensorDataMultiple(facilityId, {
+  const multiSensorData = useSensorDataMultiple(facilityId || null, {
     from: dateRange.from,
     to: dateRange.to,
     parameters: parameters,
   })
+  
+  // Determinar qué modo usar
+  const isSingleSensorMode = !!sensorId && !facilityId
+  const readings = isSingleSensorMode ? [] : multiSensorData.readings
+  const loading = isSingleSensorMode ? singleSensorData.loading : multiSensorData.loading
+  const error = isSingleSensorMode ? singleSensorData.error : multiSensorData.error
 
-  // Procesar datos combinados
-  const { combinedData, yAxisDomain } = React.useMemo(() => {
+  // Procesar datos combinados (para multi-sensor) o datos de sensor único
+  const { combinedData, yAxisDomain, effectiveParameters } = React.useMemo(() => {
+    // Modo sensor único
+    if (isSingleSensorMode && singleSensorData.data.length > 0) {
+      const singleParam = parameter || 'value'
+      const processed = reduceDataDensity(
+        singleSensorData.data.map(d => ({ 
+          timestamp: d.timestamp, 
+          [singleParam]: d.value 
+        })),
+        200
+      )
+      const values = singleSensorData.data.map(d => d.value)
+      const domain = calculateYAxisDomain(values)
+      return { combinedData: processed, yAxisDomain: domain, effectiveParameters: [singleParam] }
+    }
+    
+    // Modo multi-sensor
     if (!readings || readings.length === 0) {
-      return { combinedData: [], yAxisDomain: [0, 100] }
+      return { combinedData: [], yAxisDomain: [0, 100], effectiveParameters: parameters }
     }
 
     // Agrupar lecturas por timestamp
@@ -177,8 +218,8 @@ export function HistoricalMonitoringChart({
 
     const domain = calculateYAxisDomain(allValues, optimalMin, optimalMax)
 
-    return { combinedData: processed, yAxisDomain: domain }
-  }, [readings, parameters, facilitySensors])
+    return { combinedData: processed, yAxisDomain: domain, effectiveParameters: parameters }
+  }, [readings, parameters, facilitySensors, isSingleSensorMode, singleSensorData.data, parameter])
 
   if (loading) {
     return (
@@ -192,7 +233,20 @@ export function HistoricalMonitoringChart({
     )
   }
 
-  if (error || !readings || readings.length === 0) {
+  // Condición de no datos: depende del modo
+  const hasNoData = isSingleSensorMode 
+    ? singleSensorData.data.length === 0 
+    : (!readings || readings.length === 0)
+
+  if (error || hasNoData) {
+    // En modo compact, mostrar mensaje simple
+    if (compact) {
+      return (
+        <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+          Sin datos
+        </div>
+      )
+    }
     return (
       <Card>
         <CardContent className="p-6">
@@ -200,10 +254,10 @@ export function HistoricalMonitoringChart({
             <AlertTriangle className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">Sin datos disponibles</h3>
             <p className="text-muted-foreground">
-              {error || `No hay datos de sensores para la instalación ${facilityId}`}
+              {error || (isSingleSensorMode ? `No hay datos para el sensor ${sensorId}` : `No hay datos de sensores para la instalación ${facilityId}`)}
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Sensores configurados: {parameters.length > 0 ? parameters.join(", ") : "ninguno"}
+              Sensores configurados: {effectiveParameters.length > 0 ? effectiveParameters.join(", ") : "ninguno"}
             </p>
           </div>
         </CardContent>
@@ -211,7 +265,26 @@ export function HistoricalMonitoringChart({
     )
   }
 
-  const alerts = readings.filter((r) => r.isOutOfRange).length
+  const alerts = isSingleSensorMode ? 0 : readings.filter((r) => r.isOutOfRange).length
+
+  // En modo compact para sensor único, renderizar solo el gráfico sin Card wrapper
+  if (compact && isSingleSensorMode) {
+    const lineColor = color || getParameterColor(parameter || 'value')
+    return (
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={combinedData}>
+          <Line
+            type="monotone"
+            dataKey={parameter || 'value'}
+            stroke={lineColor}
+            strokeWidth={1.5}
+            dot={false}
+            activeDot={{ r: 3, stroke: lineColor, strokeWidth: 1, fill: "#ffffff" }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    )
+  }
 
   return (
     <Card>
@@ -230,7 +303,7 @@ export function HistoricalMonitoringChart({
             </div>
           </div>
           <CardDescription>
-            Datos de {parameters.length} sensores • {readings.length} lecturas
+            Datos de {effectiveParameters.length} sensores • {isSingleSensorMode ? singleSensorData.data.length : readings.length} lecturas
           </CardDescription>
         </CardHeader>
       )}
@@ -275,14 +348,14 @@ export function HistoricalMonitoringChart({
                   ),
               )}
 
-              {parameters.map((param, index) => (
+              {effectiveParameters.map((param, index) => (
                 <Line
                   key={param}
                   type="monotone"
                   dataKey={param}
-                  stroke={getParameterColor(param)}
+                  stroke={isSingleSensorMode && color ? color : getParameterColor(param)}
                   strokeWidth={2}
-                  dot={(props: any) => {
+                  dot={((props: any) => {
                     const sensorConfig = facilitySensors.find((s) => s.parameter === param)
                     const value = props.payload?.[param]
                     const isOutOfRange =
@@ -295,9 +368,9 @@ export function HistoricalMonitoringChart({
                         <circle cx={props.cx} cy={props.cy} r={4} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
                       )
                     }
-                    return false // No mostrar puntos normales para línea más limpia
-                  }}
-                  activeDot={{ r: 6, stroke: getParameterColor(param), strokeWidth: 2, fill: "#ffffff" }}
+                    return null // No mostrar puntos normales para línea más limpia
+                  }) as any}
+                  activeDot={{ r: 6, stroke: isSingleSensorMode && color ? color : getParameterColor(param), strokeWidth: 2, fill: "#ffffff" }}
                   connectNulls={false}
                   name={getParameterName(param)}
                 />
@@ -315,7 +388,7 @@ export function HistoricalMonitoringChart({
 
         {compact && (
           <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
-            <span>{parameters.length} parámetros monitoreados</span>
+            <span>{effectiveParameters.length} parámetros monitoreados</span>
             {alerts > 0 && (
               <Badge variant="destructive" className="text-xs">
                 {alerts} alertas

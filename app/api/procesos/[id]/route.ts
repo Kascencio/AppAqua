@@ -1,5 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
+import { parseDateForPrisma } from "@/lib/date-utils"
+
+function buildProcesoUpdateData(body: any) {
+  return {
+    ...(body?.id_especie !== undefined ? { id_especie: Number(body.id_especie) } : {}),
+    ...(body?.fecha_inicio ? { fecha_inicio: parseDateForPrisma(body.fecha_inicio) } : {}),
+    ...(body?.fecha_final ? { fecha_final: parseDateForPrisma(body.fecha_final) } : {}),
+  }
+}
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -19,7 +28,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const id = Number(params.id)
     const body = await request.json()
-    await prisma.procesos.update({ where: { id_proceso: id }, data: body })
+    const data = buildProcesoUpdateData(body)
+    await prisma.procesos.update({ where: { id_proceso: id }, data })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error actualizando proceso:", error)

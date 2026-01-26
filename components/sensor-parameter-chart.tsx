@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, TrendingDown, Minus, Download, AlertTriangle, CheckCircle, Clock, RefreshCw } from "lucide-react"
-import { useSensorData } from "@/hooks/use-sensor-data"
+import { backendApi, type Lectura as BackendLectura } from "@/lib/backend-client"
 
 interface SensorParameterChartProps {
   sensorId: string
@@ -37,10 +37,29 @@ const SensorParameterChart: React.FC<SensorParameterChartProps> = ({
     const fetchData = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`/api/lecturas?sensor=${sensorId}&from=${timeRange.start.toISOString()}&to=${timeRange.end.toISOString()}`)
-        if (!res.ok) throw new Error("Error al obtener lecturas")
-        const data = await res.json()
-        setChartData(data || [])
+        const resp = await backendApi.getLecturas({
+          sensorInstaladoId: Number(sensorId),
+          page: 1,
+          limit: 5000,
+          desde: timeRange.start.toISOString(),
+          hasta: timeRange.end.toISOString(),
+        })
+
+        const payload: any = resp
+        const lecturas: BackendLectura[] = Array.isArray(payload) ? payload : (payload.data || [])
+
+        const mapped = lecturas
+          .map((l) => {
+            const raw = (l as any).tomada_en || ((l as any).fecha && (l as any).hora ? `${(l as any).fecha}T${(l as any).hora}` : (l as any).created_at)
+            const d = raw ? new Date(raw) : new Date()
+            return {
+              timestamp: isNaN(d.getTime()) ? Date.now() : d.getTime(),
+              value: Number((l as any).valor ?? 0),
+            }
+          })
+          .sort((a, b) => a.timestamp - b.timestamp)
+
+        setChartData(mapped)
       } catch {
         // Mantener datos previos si hay error
       } finally {

@@ -22,6 +22,8 @@ import { Separator } from "@/components/ui/separator"
 import { useEspecies } from "@/hooks/use-especies"
 import { useInstalaciones } from "@/hooks/use-instalaciones"
 import { generarCodigoProceso } from "@/types/proceso"
+import type { Instalacion } from "@/lib/backend-client"
+import type { Especie } from "@/types/especie"
 
 // Esquema de validación para el formulario
 const formSchema = z.object({
@@ -51,8 +53,8 @@ interface ProcesoFormProps {
 
 export function ProcesoForm({ onSubmit, initialData, isLoading = false }: ProcesoFormProps) {
   const { toast } = useToast()
-  const { data: especies, isLoading: loadingEspecies } = useEspecies()
-  const { data: instalaciones, isLoading: loadingInstalaciones } = useInstalaciones()
+  const { especies, loading: loadingEspecies } = useEspecies()
+  const { instalaciones, loading: loadingInstalaciones } = useInstalaciones()
 
   const [selectedEspecie, setSelectedEspecie] = useState<string>("")
   const [selectedInstalacion, setSelectedInstalacion] = useState<number | null>(null)
@@ -102,7 +104,7 @@ export function ProcesoForm({ onSubmit, initialData, isLoading = false }: Proces
       const especie = especies?.find((e) => e.id_especie === especieId)
       if (especie) {
         setSelectedEspecie(especie.nombre)
-        const codigo = generarCodigoProceso(new Date(fechaInicio), especie.nombre)
+        const codigo = generarCodigoProceso(format(fechaInicio, "yyyy-MM-dd"), especie.nombre)
         setCodigoProceso(codigo)
         form.setValue("codigo_proceso", codigo)
       }
@@ -112,13 +114,13 @@ export function ProcesoForm({ onSubmit, initialData, isLoading = false }: Proces
   // Filtrar instalaciones por sucursal seleccionada
   useEffect(() => {
     if (sucursalId && instalaciones) {
-      const filtradas = instalaciones.filter((inst) => inst.id_empresa_sucursal === sucursalId)
+      const filtradas = instalaciones.filter((inst: Instalacion) => inst.id_sucursal === sucursalId)
       setInstalacionesFiltradas(filtradas)
 
       // Si la instalación actual no pertenece a la sucursal, resetear
       const instalacionActual = form.getValues("id_instalacion")
       if (instalacionActual) {
-        const pertenece = filtradas.some((inst) => inst.id_instalacion === instalacionActual)
+        const pertenece = filtradas.some((inst: Instalacion) => inst.id_instalacion === instalacionActual)
         if (!pertenece) {
           form.setValue("id_instalacion", undefined as any)
         }
@@ -167,14 +169,13 @@ export function ProcesoForm({ onSubmit, initialData, isLoading = false }: Proces
     if (!instalacion) return null
 
     // Encontrar la sucursal asociada
-    const sucursal = instalaciones.find((i) => i.id_instalacion === selectedInstalacion)?.id_empresa_sucursal
     const sucursalData = instalaciones.find((i) => i.id_instalacion === selectedInstalacion)?.id_empresa_sucursal
 
     return {
       nombre: instalacion.nombre_instalacion,
       descripcion: instalacion.descripcion,
       tipo: instalacion.tipo_uso,
-      sucursal: sucursalData?.nombre || "Desconocida",
+      sucursal: sucursalData != null ? `ID ${sucursalData}` : "Desconocida",
     }
   }
 
@@ -270,11 +271,17 @@ export function ProcesoForm({ onSubmit, initialData, isLoading = false }: Proces
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {instalaciones?.map((sucursal) => (
-                        <SelectItem key={sucursal.id_empresa_sucursal} value={sucursal.id_empresa_sucursal.toString()}>
-                          {sucursal.nombre}
-                        </SelectItem>
-                      ))}
+                      {instalaciones
+                        ?.filter((sucursal) => (sucursal as any).id_empresa_sucursal != null || (sucursal as any).id_sucursal != null)
+                        .map((sucursal) => {
+                          const id = (sucursal as any).id_empresa_sucursal ?? (sucursal as any).id_sucursal
+                          const label = (sucursal as any).nombre ?? (sucursal as any).nombre_instalacion ?? `Sucursal ${id}`
+                          return (
+                            <SelectItem key={String(id)} value={String(id)}>
+                              {label}
+                            </SelectItem>
+                          )
+                        })}
                     </SelectContent>
                   </Select>
                   <FormMessage />

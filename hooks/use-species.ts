@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { toast } from "@/hooks/use-toast"
+import { backendApi, type Especie as BackendEspecie } from "@/lib/backend-client"
 import type { Especie, EspecieConParametros } from "@/types/especie"
 import type { Parametro } from "@/types/parametro"
 import type { EspecieParametro } from "@/types/especie-parametro"
-import { api } from "@/lib/api"
 
 /**
- * Hook para manejar el CRUD de especies y sus parámetros
+ * Hook para manejar el CRUD de especies y sus parámetros usando el backend externo
  */
 export function useSpecies() {
   // Estados principales
@@ -19,42 +19,68 @@ export function useSpecies() {
   const [error, setError] = useState<string | null>(null)
 
   /**
-   * Cargar todas las especies con sus parámetros
+   * Cargar todas las especies con sus parámetros desde backend externo
    */
   const loadSpecies = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
-      // Cargar especies, parámetros y relaciones en paralelo
-      const [especiesRes, parametrosRes, especieParametrosRes] = await Promise.all([
-        api.get<Especie[]>("/catalogo-especies").catch(() => []),
-        api.get<Parametro[]>("/parametros").catch(() => []),
-        api.get<EspecieParametro[]>("/especie-parametros").catch(() => []),
-      ])
+      // Cargar especies desde backend externo
+      const especiesResp = await backendApi.getEspecies({ page: 1, limit: 1000 }).catch(() => ({ data: [] }))
+      const especiesData: BackendEspecie[] = especiesResp.data || []
 
-      const especiesData = especiesRes
-      const parametrosData = parametrosRes
-      const especieParametrosData = especieParametrosRes
-
-      // Combinar datos
-      const especiesConParametros: EspecieConParametros[] = especiesData.map((especie) => ({
-        ...especie,
-        parametros: especieParametrosData
-          .filter((ep) => ep.id_especie === especie.id_especie)
-          .map((ep) => {
-            const parametro = parametrosData.find((p) => p.id_parametro === ep.id_parametro)
-            return {
-              ...ep,
-              nombre_parametro: parametro?.nombre_parametro || "Desconocido",
-              unidad_medida: parametro?.unidad_medida || "",
-            }
-          }),
-      }))
+      // Map backend schema to frontend shape
+      // Backend Especie already includes optimal ranges (ph_optimo_min/max, temperatura_optima_min/max, etc)
+      // Frontend expects parametros array — we synthesize it from the optimal fields
+      const especiesConParametros: EspecieConParametros[] = especiesData.map((e) => {
+        const parametros: any[] = []
+        
+        if (e.temperatura_optima_min != null && e.temperatura_optima_max != null) {
+          parametros.push({
+            id_especie_parametro: 0,
+            id_parametro: 1, // Assuming 1=temperature
+            nombre_parametro: 'Temperatura',
+            unidad_medida: '°C',
+            Rmin: e.temperatura_optima_min,
+            Rmax: e.temperatura_optima_max,
+          })
+        }
+        
+        if (e.ph_optimo_min != null && e.ph_optimo_max != null) {
+          parametros.push({
+            id_especie_parametro: 0,
+            id_parametro: 2, // Assuming 2=pH
+            nombre_parametro: 'pH',
+            unidad_medida: 'pH',
+            Rmin: e.ph_optimo_min,
+            Rmax: e.ph_optimo_max,
+          })
+        }
+        
+        if (e.oxigeno_optimo_min != null && e.oxigeno_optimo_max != null) {
+          parametros.push({
+            id_especie_parametro: 0,
+            id_parametro: 3, // Assuming 3=oxygen
+            nombre_parametro: 'Oxígeno Disuelto',
+            unidad_medida: 'mg/L',
+            Rmin: e.oxigeno_optimo_min,
+            Rmax: e.oxigeno_optimo_max,
+          })
+        }
+        
+        return {
+          id_especie: e.id_especie,
+          nombre: e.nombre_comun || e.nombre_cientifico || `Especie ${e.id_especie}`,
+          fecha_creacion: e.created_at,
+          estado: (e.activo ? 'activa' : 'inactiva') as 'activa' | 'inactiva',
+          parametros,
+        }
+      })
 
       setSpecies(especiesConParametros)
-      setParameters(parametrosData)
-      setSpeciesParameters(especieParametrosData)
+      setParameters([]) // No longer fetching separate parameters
+      setSpeciesParameters([]) // No longer fetching separate especie_parametros
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error desconocido"
       setError(errorMessage)
@@ -87,27 +113,30 @@ export function useSpecies() {
       try {
         setLoading(true)
 
-        // Crear especie
-        const nuevaEspecie = await api.post<Especie>("/catalogo-especies", {
-          nombre: data.nombre,
-          // nombre_cientifico: data.nombre_cientifico, // Check if backend supports this
-          // tipo_cultivo: data.tipo_cultivo, // Check if backend supports this
-          // estado: data.estado || "activa", // Check if backend supports this
-        })
-
-        // Crear parámetros si se proporcionaron
-        if (data.parametros && data.parametros.length > 0) {
-          const parametrosPromises = data.parametros.map((param) =>
-            api.post("/especie-parametros", {
-              id_especie: nuevaEspecie.id_especie,
-              id_parametro: param.id_parametro,
-              Rmin: param.rango_min,
-              Rmax: param.rango_max,
-            })
-          )
-
-          await Promise.all(parametrosPromises)
+        // Map parametros to backend optimal fields
+        const payload: any = {
+          nombre_comun: data.nombre,
+          nombre_cientifico: data.nombre_cientifico,
+          descripcion: data.tipo_cultivo,
+          activo: data.estado !== 'inactiva',
         }
+        
+        if (data.parametros) {
+          for (const p of data.parametros) {
+            if (p.id_parametro === 1) { // temperature
+              payload.temperatura_optima_min = p.rango_min
+              payload.temperatura_optima_max = p.rango_max
+            } else if (p.id_parametro === 2) { // pH
+              payload.ph_optimo_min = p.rango_min
+              payload.ph_optimo_max = p.rango_max
+            } else if (p.id_parametro === 3) { // oxygen
+              payload.oxigeno_optimo_min = p.rango_min
+              payload.oxigeno_optimo_max = p.rango_max
+            }
+          }
+        }
+        
+        await backendApi.createEspecie(payload)
 
         toast({
           title: "Éxito",
@@ -153,36 +182,29 @@ export function useSpecies() {
       try {
         setLoading(true)
 
-        // Actualizar especie
-        await api.put(`/catalogo-especies/${id}`, {
-          nombre: data.nombre,
-          // nombre_cientifico: data.nombre_cientifico,
-          // tipo_cultivo: data.tipo_cultivo,
-          // estado: data.estado,
-        })
-
-        // Eliminar parámetros existentes
-        // Note: Backend API for deleting params by species ID might not exist or be different.
-        // Assuming we can delete individually or there's a bulk delete.
-        // For now, let's skip deletion logic or assume we need to delete one by one if we had the IDs.
-        // Since we don't have IDs of existing params easily here without looking up, this is tricky.
-        // Let's assume the backend handles replacement or we just add new ones for now.
-
-        // await api.delete(`/especie-parametros?id_especie=${id}`)
-
-        // Crear nuevos parámetros
-        if (data.parametros && data.parametros.length > 0) {
-          const parametrosPromises = data.parametros.map((param) =>
-            api.post("/especie-parametros", {
-              id_especie: id,
-              id_parametro: param.id_parametro,
-              Rmin: param.rango_min,
-              Rmax: param.rango_max,
-            })
-          )
-
-          await Promise.all(parametrosPromises)
+        const payload: any = {
+          nombre_comun: data.nombre,
+          nombre_cientifico: data.nombre_cientifico,
+          descripcion: data.tipo_cultivo,
+          activo: data.estado !== 'inactiva',
         }
+        
+        if (data.parametros) {
+          for (const p of data.parametros) {
+            if (p.id_parametro === 1) {
+              payload.temperatura_optima_min = p.rango_min
+              payload.temperatura_optima_max = p.rango_max
+            } else if (p.id_parametro === 2) {
+              payload.ph_optimo_min = p.rango_min
+              payload.ph_optimo_max = p.rango_max
+            } else if (p.id_parametro === 3) {
+              payload.oxigeno_optimo_min = p.rango_min
+              payload.oxigeno_optimo_max = p.rango_max
+            }
+          }
+        }
+        
+        await backendApi.updateEspecie(id, payload)
 
         toast({
           title: "Éxito",
@@ -214,7 +236,7 @@ export function useSpecies() {
       try {
         setLoading(true)
 
-        await api.delete(`/catalogo-especies/${id}`)
+        await backendApi.deleteEspecie(id)
 
         toast({
           title: "Éxito",

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma, { handlePrismaError } from '@/lib/prisma'
-import { 
-  organizacionCreateSchema, 
+import {
+  organizacionCreateSchema,
   organizacionQuerySchema,
   validateRequestBody,
-  validateQueryParams 
+  validateQueryParams
 } from '@/lib/validations'
 
 /**
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url)
     const rawParams = Object.fromEntries(url.searchParams.entries())
-    
+
     // Convert string numbers to actual numbers for validation
     const queryParams = {
       ...rawParams,
@@ -24,12 +24,12 @@ export async function GET(request: NextRequest) {
       id_estado: rawParams.id_estado ? Number(rawParams.id_estado) : undefined,
     }
 
-    const { 
-      search, 
-      estado, 
-      id_estado, 
-      page = 1, 
-      pageSize = 10 
+    const {
+      search,
+      estado,
+      id_estado,
+      page = 1,
+      pageSize = 10
     } = validateQueryParams(organizacionQuerySchema, queryParams)
 
     // Build where clause
@@ -61,7 +61,6 @@ export async function GET(request: NextRequest) {
       include: {
         estados: true,
         municipios: true,
-        colonias: true,
         organizacion_sucursal: {
           select: {
             id_organizacion_sucursal: true,
@@ -92,7 +91,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Error fetching organizaciones:', error)
-    
+
     if (error instanceof Error && error.message.includes('validation')) {
       return NextResponse.json(
         { success: false, error: 'Parámetros de consulta inválidos' },
@@ -118,10 +117,10 @@ export async function POST(request: NextRequest) {
 
     if (!validation.success) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: validation.error, 
-          details: validation.details 
+        {
+          success: false,
+          error: validation.error,
+          details: validation.details
         },
         { status: 400 }
       )
@@ -131,16 +130,16 @@ export async function POST(request: NextRequest) {
 
     // Check if organization with same name already exists
     const existingOrg = await prisma.organizacion.findFirst({
-      where: { 
-        nombre: organizacionData.nombre 
+      where: {
+        nombre: organizacionData.nombre
       }
     })
 
     if (existingOrg) {
       return NextResponse.json(
-        { 
-          success: false, 
-          error: 'Ya existe una organización con ese nombre' 
+        {
+          success: false,
+          error: 'Ya existe una organización con ese nombre'
         },
         { status: 409 }
       )
@@ -152,7 +151,6 @@ export async function POST(request: NextRequest) {
       include: {
         estados: true,
         municipios: true,
-        colonias: true,
       }
     })
 
@@ -168,7 +166,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating organizacion:', error)
     const prismaError = handlePrismaError(error)
-    
+
     return NextResponse.json(
       { success: false, error: prismaError.message },
       { status: prismaError.status }

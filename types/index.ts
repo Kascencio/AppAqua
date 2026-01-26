@@ -22,6 +22,7 @@ export interface EmpresaSucursal {
   telefono?: string | null // VARCHAR(20) NULL
   email?: string | null // VARCHAR(100) NULL
   estado_operativo: "activa" | "inactiva" // ENUM NOT NULL
+  estado?: "activa" | "inactiva" // Alias for estado_operativo
   fecha_registro: string // DATE NOT NULL (ISO string format)
   id_estado: number // FK NOT NULL
   id_cp: number // FK NOT NULL
@@ -39,14 +40,25 @@ export interface Instalacion {
   fecha_instalacion: string // DATE NOT NULL (ISO string format)
   estado_operativo: "activo" | "inactivo" // ENUM NOT NULL
   descripcion: string // VARCHAR(200) NOT NULL
-  tipo_uso: "acuicultura" | "tratamiento" | "otros" // ENUM NOT NULL
+  tipo_uso: "acuicultura" | "tratamiento" | "otros" | string // ENUM NOT NULL
   id_proceso: number // FK NOT NULL
+  // Extended fields for views
+  nombre_empresa?: string
+  nombre_proceso?: string
+  nombre_especie?: string
+  tipo_cultivo?: string
+  capacidad?: number
+  total?: number
 }
 
 // Tabla: especies
 export interface Especie {
   id_especie: number
   nombre: string // VARCHAR(100) NOT NULL
+  // Alias fields for compatibility
+  nombre_comun?: string
+  nombre_cientifico?: string
+  descripcion?: string
 }
 
 // Tabla: procesos
@@ -56,6 +68,13 @@ export interface Proceso {
   id_instalacion: number // FK NOT NULL
   fecha_inicio: string // DATE NOT NULL (ISO string format)
   fecha_final: string // DATE NOT NULL (ISO string format)
+  // Extended fields for views
+  nombre?: string
+  nombre_proceso?: string
+  nombre_especie?: string
+  nombre_instalacion?: string
+  estado?: string
+  lecturas?: unknown[]
 }
 
 // Tabla: catalogo_sensores
@@ -77,6 +96,11 @@ export interface SensorInstalado {
   fecha_instalada: string // DATE NOT NULL (ISO string format)
   descripcion: string // VARCHAR(15) NOT NULL
   id_lectura?: number | null // FK NULL
+  // Additional properties used in components
+  nombre_sensor?: string
+  tipo_sensor?: string
+  unidad_medida?: string
+  estado?: 'activo' | 'inactivo' | string
 }
 
 // Tabla: lectura
@@ -86,11 +110,16 @@ export interface Lectura {
   valor: number // DECIMAL(10,2) NOT NULL
   fecha: string // DATE NOT NULL (ISO string format)
   hora: string // TIME NOT NULL (HH:MM:SS format)
+  // Additional fields that may come from backend
+  fecha_hora?: string // Combined datetime field
+  tipo_medida?: string
+  unidad?: string
 }
 
 // Tabla: alertas
 export interface Alerta {
   id_alertas: number
+  id_alerta?: number // Alias for id_alertas
   id_instalacion: number // FK NOT NULL
   id_sensor_instalado: number // FK NOT NULL
   descripcion: string // VARCHAR(100) NOT NULL
@@ -102,6 +131,13 @@ export interface Alerta {
   estado_alerta?: string
   title?: string
   parameter?: string
+  // Additional fields from API responses
+  id_parametro?: number
+  fecha_hora_alerta?: string
+  mensaje_alerta?: string
+  valor_medido?: number
+  valor_minimo_esperado?: number
+  valor_maximo_esperado?: number
 }
 
 // Tabla: parametros
@@ -196,6 +232,16 @@ export interface ParametroMonitoreo {
   valor_actual?: number
   estado?: "normal" | "advertencia" | "critico"
   ultima_lectura?: string
+  // Additional properties used in various components
+  nombre?: string // Alias for nombre_parametro
+  unidad?: string // Alias for unidad_medida
+  rango_min?: number
+  rango_max?: number
+  alertas_count?: number
+  id_sensor_instalado?: number
+  promedio?: number
+  total?: number
+  lecturas?: unknown[]
 }
 
 // ============================================================================

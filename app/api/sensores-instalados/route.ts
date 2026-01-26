@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
 import { JWTUtils } from "@/lib/auth-utils"
+import { parseDateForPrisma } from "@/lib/date-utils"
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           error: "El sensor ya está instalado en esta instalación",
-          detalles: `El sensor "${sensorExistente.catalogo_sensores.sensor}" ya está instalado en "${sensorExistente.instalacion.nombre_instalacion}"`,
+          detalles: `El sensor "${sensorExistente.catalogo_sensores.nombre}" ya está instalado en "${sensorExistente.instalacion.nombre_instalacion}"`,
           sensor_existente: {
             id: sensorExistente.id_sensor_instalado,
             descripcion: sensorExistente.descripcion,
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
       data: {
         id_sensor: Number(body.id_sensor),
         id_instalacion: Number(body.id_instalacion),
-        fecha_instalada: new Date(body.fecha_instalada),
+        fecha_instalada: parseDateForPrisma(body.fecha_instalada)!,
         descripcion: body.descripcion,
         id_lectura: body.id_lectura ? Number(body.id_lectura) : null,
       },

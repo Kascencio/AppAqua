@@ -14,11 +14,19 @@ import { PageHeader } from "@/components/page-header"
 
 export default function NotificationsPage() {
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all")
+  const [localAlerts, setLocalAlerts] = useState<any[]>([])
   const { toast } = useToast()
   const searchParams = useSearchParams()
 
   // Usar el contexto global
-  const { alerts, setAlerts, isLoading } = useAppContext()
+  const context = useAppContext()
+  const contextAlerts = context?.alerts ?? []
+  const isLoading = context?.isLoading ?? false
+  
+  // Sync context alerts to local state
+  useEffect(() => {
+    setLocalAlerts(contextAlerts)
+  }, [contextAlerts])
 
   // Aplicar filtro de URL si existe
   useEffect(() => {
@@ -76,9 +84,8 @@ export default function NotificationsPage() {
   }
 
   const markAsRead = (id: number) => {
-    const updatedAlerts = alerts.map((alert) => (alert.id_alertas === id ? { ...alert, read: true } : alert))
-    setAlerts(updatedAlerts)
-    // localStorage.setItem("alerts", JSON.stringify(updatedAlerts)) // Removed local storage sync as it might conflict
+    const updatedAlerts = localAlerts.map((alert: any) => (alert.id_alertas === id ? { ...alert, read: true } : alert))
+    setLocalAlerts(updatedAlerts)
 
     toast({
       title: "Notificación marcada como leída",
@@ -88,8 +95,8 @@ export default function NotificationsPage() {
   }
 
   const markAllAsRead = () => {
-    const updatedAlerts = alerts.map((alert) => ({ ...alert, read: true }))
-    setAlerts(updatedAlerts)
+    const updatedAlerts = localAlerts.map((alert: any) => ({ ...alert, read: true }))
+    setLocalAlerts(updatedAlerts)
     
     toast({
       title: "Todas las notificaciones marcadas como leídas",
@@ -99,8 +106,8 @@ export default function NotificationsPage() {
   }
 
   const deleteNotification = (id: number) => {
-    const updatedAlerts = alerts.filter((alert) => alert.id_alertas !== id)
-    setAlerts(updatedAlerts)
+    const updatedAlerts = localAlerts.filter((alert: any) => alert.id_alertas !== id)
+    setLocalAlerts(updatedAlerts)
     
     toast({
       title: "Notificación eliminada",
@@ -110,7 +117,7 @@ export default function NotificationsPage() {
   }
 
   const clearAllNotifications = () => {
-    setAlerts([])
+    setLocalAlerts([])
     
     toast({
       title: "Todas las notificaciones eliminadas",
@@ -119,14 +126,14 @@ export default function NotificationsPage() {
     })
   }
 
-  const filteredAlerts = alerts.filter((alert) => {
+  const filteredAlerts = localAlerts.filter((alert: any) => {
     if (filter === "all") return true
     if (filter === "unread") return !alert.read
     if (filter === "read") return alert.read
     return true
   })
 
-  const unreadCount = alerts.filter((alert) => !alert.read).length
+  const unreadCount = localAlerts.filter((alert: any) => !alert.read).length
 
   if (isLoading) {
     return (
@@ -184,7 +191,7 @@ export default function NotificationsPage() {
             No leídas ({unreadCount})
           </TabsTrigger>
           <TabsTrigger value="read" className="flex-1 sm:flex-initial">
-            Leídas ({alerts.length - unreadCount})
+            Leídas ({localAlerts.length - unreadCount})
           </TabsTrigger>
         </TabsList>
 

@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { MapComponent } from "@/components/map-component"
 import { useAppContext } from "@/context/app-context"
 import type { EmpresaSucursalCompleta } from "@/types"
+import type { Branch } from "@/types/branch"
 import {
   Building2,
   Store,
@@ -34,7 +35,11 @@ export default function MapPage() {
   const [showInactivas, setShowInactivas] = useState(true)
 
   // Usar AppContext
-  const { empresasSucursales, isLoading, error, refreshData } = useAppContext()
+  const context = useAppContext()
+  const empresasSucursales = context?.empresasSucursales ?? []
+  const isLoading = context?.isLoading ?? false
+  const error = context?.error ?? null
+  const refreshData = context?.refreshData ?? (async () => {})
   
   // Calcular porEstado
   const porEstado = useMemo(() => {
@@ -48,16 +53,16 @@ export default function MapPage() {
   
   // Calcular estadísticas manualmente
   const stats = {
-    totalEmpresas: empresasSucursales.filter((e) => e.tipo === "empresa").length,
-    totalSucursales: empresasSucursales.filter((e) => e.tipo === "sucursal").length,
-    empresasActivas: empresasSucursales.filter((e) => e.estado_operativo === "activa").length,
-    sucursalesActivas: empresasSucursales.filter((e) => e.tipo === "sucursal" && e.estado_operativo === "activa").length,
+    totalEmpresas: empresasSucursales.filter((e: any) => e.tipo === "empresa").length,
+    totalSucursales: empresasSucursales.filter((e: any) => e.tipo === "sucursal").length,
+    empresasActivas: empresasSucursales.filter((e: any) => e.estado_operativo === "activa").length,
+    sucursalesActivas: empresasSucursales.filter((e: any) => e.tipo === "sucursal" && e.estado_operativo === "activa").length,
     porEstado,
   }
 
   // Filtrado de datos
   const filteredEmpresas = useMemo(() => {
-    return empresasSucursales.filter((empresa) => {
+    return empresasSucursales.filter((empresa: any) => {
       const matchesSearch =
         empresa.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (empresa.nombre_estado?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
@@ -72,7 +77,7 @@ export default function MapPage() {
   }, [empresasSucursales, searchTerm, filterTipo, filterEstado, showInactivas])
 
   // Preparar datos para el mapa
-  const mapData = useMemo(() => {
+  const mapData = useMemo<Branch[]>(() => {
     return filteredEmpresas.map((empresa, index) => {
       // Mock coordinates based on index/id to spread them out
       // Base center: 17.9869, -92.9303 (Villahermosa roughly)
@@ -80,14 +85,26 @@ export default function MapPage() {
       const lng = -92.9303 + (Math.random() - 0.5) * 0.1
       
       return {
-        id: empresa.id_empresa_sucursal.toString(),
+        ...empresa,
+        id: empresa.id_empresa_sucursal,
         name: empresa.nombre,
-        type: empresa.tipo,
-        status: empresa.estado_operativo,
-        coordinates: { lat, lng },
-        address: `${empresa.calle} ${empresa.numero_int_ext || ""}, ${empresa.nombre_colonia || ""}, ${empresa.nombre_estado || ""}`,
+        parentId: empresa.id_padre,
+        type: empresa.tipo === "empresa" ? "company" : "branch",
         phone: empresa.telefono,
         email: empresa.email,
+        status: empresa.estado_operativo === "activa" ? "active" : "inactive",
+        registrationDate: empresa.fecha_registro,
+        address: {
+          street: empresa.calle,
+          number: empresa.numero_int_ext,
+          reference: empresa.referencia,
+          stateId: empresa.id_estado,
+          postalCodeId: empresa.id_cp,
+          neighborhoodId: empresa.id_colonia,
+        },
+        coordinates: [lat, lng],
+        location: { lat, lng },
+        facilities: [],
       }
     })
   }, [filteredEmpresas])
@@ -293,7 +310,6 @@ export default function MapPage() {
                     const empresa = empresasSucursales.find((e) => e.id_empresa_sucursal.toString() === branchId)
                     if (empresa) handleEmpresaSelect(empresa)
                   }}
-                  selectedBranchId={selectedEmpresa?.id_empresa_sucursal.toString()}
                 />
               </div>
             </CardContent>

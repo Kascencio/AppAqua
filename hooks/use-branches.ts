@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import type { EmpresaSucursal } from "@/types/empresa-sucursal"
 import { empresaSucursalToBranch, Branch } from "@/types/empresa-sucursal"
 import { api } from "@/lib/api"
+import { toast } from "sonner"
 
 export function useBranches() {
   const [branches, setBranches] = useState<Branch[]>([])
@@ -100,8 +101,31 @@ export function useBranches() {
 
   // Eliminar sucursal
   const deleteBranch = async (id: number) => {
-    // Logic to determine if it's org or branch
-    console.warn("Delete not fully implemented due to ID mapping complexity")
+    const target = branches.find((b) => b.id_empresa_sucursal === id)
+    if (!target) {
+      toast.error("No se encontró el registro a eliminar")
+      return
+    }
+
+    try {
+      if (target.tipo === "empresa") {
+        await api.delete(`/organizaciones/${id}`)
+      } else {
+        // En este módulo legacy usamos un offset de 10000 para evitar colisiones
+        const realSucursalId = id - 10000
+        if (!Number.isFinite(realSucursalId) || realSucursalId <= 0) {
+          throw new Error("ID de sucursal inválido")
+        }
+        await api.delete(`/sucursales/${realSucursalId}`)
+      }
+
+      setBranches((prev) => prev.filter((b) => b.id_empresa_sucursal !== id))
+      toast.success("Eliminado correctamente")
+    } catch (error) {
+      console.error("Error deleting branch:", error)
+      toast.error("Error al eliminar")
+      throw error
+    }
   }
 
   return {

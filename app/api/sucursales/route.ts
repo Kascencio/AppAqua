@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const decoded = JWTUtils.verifyToken(token)
     if (!decoded) return NextResponse.json({ error: "Token inválido" }, { status: 401 })
 
-    const rows = await prisma.empresa_sucursal.findMany()
+    const rows = await prisma.organizacion_sucursal.findMany()
     return NextResponse.json(rows)
   } catch (error) {
     console.error("Error obteniendo sucursales:", error)
@@ -40,21 +40,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Campos requeridos faltantes" }, { status: 400 })
     }
 
-    const created = await prisma.empresa_sucursal.create({
+    const created = await prisma.organizacion_sucursal.create({
       data: {
-        nombre: body.nombre,
-        tipo: body.tipo,
-        telefono: body.telefono ?? null,
-        email: body.email ?? null,
-        estado_operativo: body.estado_operativo,
-        fecha_registro: new Date(body.fecha_registro),
+        nombre_sucursal: body.nombre,
+        telefono_sucursal: body.telefono ?? null,
+        correo_sucursal: body.email ?? null,
+        estado: body.estado_operativo === 'activo' ? 'activa' : 'inactiva',
         id_estado: Number(body.id_estado),
-        id_cp: Number(body.id_cp),
-        id_colonia: Number(body.id_colonia),
-        calle: body.calle,
-        numero_int_ext: body.numero_int_ext ?? null,
-        referencia: body.referencia ?? null,
-        id_padre: body.id_padre ? Number(body.id_padre) : null,
+        id_municipio: Number(body.id_municipio), // Changed from id_cp/id_colonia/calle as they assume new model
+        id_organizacion: Number(body.id_padre),
       },
     })
     return NextResponse.json(created, { status: 201 })
@@ -84,7 +78,7 @@ export async function DELETE(request: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "ID de sucursal es obligatorio" }, { status: 400 })
     }
-    await prisma.empresa_sucursal.delete({ where: { id_empresa_sucursal: Number(id) } })
+    await prisma.organizacion_sucursal.delete({ where: { id_organizacion_sucursal: Number(id) } })
     return NextResponse.json({ message: "Sucursal eliminada correctamente" })
   } catch (error) {
     console.error("Error eliminando sucursal:", error)
@@ -113,40 +107,20 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "ID de sucursal es obligatorio" }, { status: 400 })
     }
     const body = await request.json()
-    const {
-      // Campos válidos de la tabla
-      id_padre,
-      nombre,
-      tipo,
-      telefono,
-      email,
-      estado_operativo,
-      fecha_registro,
-      id_estado,
-      id_cp,
-      id_colonia,
-      calle,
-      numero_int_ext,
-      referencia,
-    } = body
 
-    const updated = await prisma.empresa_sucursal.update({
-      where: { id_empresa_sucursal: Number(id) },
-      data: {
-        ...(id_padre !== undefined ? { id_padre: id_padre === null ? null : Number(id_padre) } : {}),
-        ...(nombre !== undefined ? { nombre } : {}),
-        ...(tipo !== undefined ? { tipo } : {}),
-        ...(telefono !== undefined ? { telefono } : {}),
-        ...(email !== undefined ? { email } : {}),
-        ...(estado_operativo !== undefined ? { estado_operativo } : {}),
-        ...(fecha_registro !== undefined ? { fecha_registro: new Date(fecha_registro) } : {}),
-        ...(id_estado !== undefined ? { id_estado: Number(id_estado) } : {}),
-        ...(id_cp !== undefined ? { id_cp: Number(id_cp) } : {}),
-        ...(id_colonia !== undefined ? { id_colonia: Number(id_colonia) } : {}),
-        ...(calle !== undefined ? { calle } : {}),
-        ...(numero_int_ext !== undefined ? { numero_int_ext } : {}),
-        ...(referencia !== undefined ? { referencia } : {}),
-      },
+    // Map old body fields to new schema
+    const data: any = {}
+    if (body.nombre) data.nombre_sucursal = body.nombre
+    if (body.telefono) data.telefono_sucursal = body.telefono
+    if (body.email) data.correo_sucursal = body.email
+    if (body.estado_operativo) data.estado = body.estado_operativo === 'activo' ? 'activa' : 'inactiva'
+    if (body.id_estado) data.id_estado = Number(body.id_estado)
+    if (body.id_municipio) data.id_municipio = Number(body.id_municipio)
+    if (body.id_padre) data.id_organizacion = Number(body.id_padre)
+
+    const updated = await prisma.organizacion_sucursal.update({
+      where: { id_organizacion_sucursal: Number(id) },
+      data,
     })
     return NextResponse.json(updated)
   } catch (error) {

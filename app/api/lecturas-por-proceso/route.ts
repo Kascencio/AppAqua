@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
+import { parseDateForPrisma } from "@/lib/date-utils"
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,8 +36,8 @@ export async function POST(request: NextRequest) {
       data: {
         id_sensor_instalado: Number(body.id_sensor_instalado),
         valor: body.valor,
-        fecha: new Date(body.fecha),
-        hora: new Date(`1970-01-01T${body.hora}`),
+        fecha: parseDateForPrisma(body.fecha)!,
+        hora: parseDateForPrisma(`1970-01-01T${body.hora}`)!,
       }
     })
     return NextResponse.json(created, { status: 201 })

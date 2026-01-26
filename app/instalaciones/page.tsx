@@ -8,30 +8,43 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Calendar, Building, Trash2, Edit, Plus } from "lucide-react"
 import { AddInstalacionDialog } from "@/components/add-instalacion-dialog"
+import { EditInstalacionDialog } from "@/components/edit-instalacion-dialog"
 import { useInstalaciones } from "@/hooks/use-instalaciones"
 import { useToast } from "@/hooks/use-toast"
+import type { Instalacion as BackendInstalacion } from "@/lib/backend-client"
 import type { Instalacion } from "@/types/instalacion"
+
+// Extended type for UI compatibility
+type InstalacionUI = BackendInstalacion & Partial<Instalacion>
 
 // TODO: Esta página ya está alineada a las interfaces oficiales. Cambiar a fetch real al pasar a producción.
 
 export default function InstalacionesPage() {
-  const { instalaciones, loading, error, deleteInstalacion, createInstalacion } = useInstalaciones()
+  const { instalaciones, loading, error, deleteInstalacion, createInstalacion, updateInstalacion } = useInstalaciones()
   const [searchTerm, setSearchTerm] = useState("")
-  const [filteredInstalaciones, setFilteredInstalaciones] = useState<Instalacion[]>([])
+  const [filteredInstalaciones, setFilteredInstalaciones] = useState<InstalacionUI[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [selectedInstalacion, setSelectedInstalacion] = useState<Instalacion | null>(null)
   const { toast } = useToast()
+
+  const normalizeOrganizacionSucursalId = (idEmpresaSucursal: number) => {
+    const n = Number(idEmpresaSucursal)
+    if (!Number.isFinite(n) || n <= 0) return null
+    return n >= 10000 ? n - 10000 : n
+  }
 
   // Filtrar instalaciones basado en el término de búsqueda
   useEffect(() => {
     if (!searchTerm.trim()) {
-      setFilteredInstalaciones(instalaciones)
+      setFilteredInstalaciones(instalaciones as InstalacionUI[])
     } else {
-      const filtered = instalaciones.filter(
+      const filtered = (instalaciones as InstalacionUI[]).filter(
         (instalacion) =>
-          instalacion.nombre_instalacion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          instalacion.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          instalacion.tipo_uso.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          instalacion.nombre_empresa?.toLowerCase().includes(searchTerm.toLowerCase()),
+          (instalacion.nombre_instalacion || instalacion.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (instalacion.descripcion || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (instalacion.tipo_uso || instalacion.tipo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (instalacion.nombre_empresa as string || '').toLowerCase().includes(searchTerm.toLowerCase()),
       )
       setFilteredInstalaciones(filtered)
     }
@@ -39,7 +52,20 @@ export default function InstalacionesPage() {
 
   const handleAddInstalacion = async (instalacionData: Omit<Instalacion, "id_instalacion">) => {
     try {
-      await createInstalacion(instalacionData)
+      const id_organizacion_sucursal = normalizeOrganizacionSucursalId(Number(instalacionData.id_empresa_sucursal))
+      if (!id_organizacion_sucursal) {
+        throw new Error("Sucursal inválida")
+      }
+
+      await createInstalacion({
+        id_organizacion_sucursal,
+        nombre_instalacion: instalacionData.nombre_instalacion,
+        fecha_instalacion: instalacionData.fecha_instalacion,
+        estado_operativo: instalacionData.estado_operativo,
+        descripcion: instalacionData.descripcion,
+        tipo_uso: instalacionData.tipo_uso,
+        id_proceso: instalacionData.id_proceso,
+      } as any)
       setIsAddDialogOpen(false)
       toast({
         title: "Éxito",
@@ -70,6 +96,61 @@ export default function InstalacionesPage() {
           variant: "destructive",
         })
       }
+    }
+  }
+
+  const openEditDialog = (instalacion: InstalacionUI) => {
+    const rawTipoUso = instalacion.tipo_uso ?? instalacion.tipo
+    const normalizedTipoUso = rawTipoUso === "acuicultura" || rawTipoUso === "tratamiento" || rawTipoUso === "otros"
+      ? rawTipoUso
+      : "otros"
+    const normalized: Instalacion = {
+      id_instalacion: instalacion.id_instalacion,
+      id_empresa_sucursal: Number(instalacion.id_empresa_sucursal ?? instalacion.id_sucursal ?? 0),
+      nombre_instalacion: instalacion.nombre_instalacion ?? instalacion.nombre ?? "",
+      fecha_instalacion: instalacion.fecha_instalacion ?? instalacion.created_at ?? new Date().toISOString().split("T")[0],
+      estado_operativo: instalacion.estado_operativo ?? "activo",
+      descripcion: instalacion.descripcion ?? "",
+      tipo_uso: normalizedTipoUso,
+      id_proceso: Number(instalacion.id_proceso ?? 1),
+      nombre_empresa: instalacion.nombre_empresa,
+      nombre_proceso: instalacion.nombre_proceso,
+      nombre_especie: instalacion.nombre_especie,
+    }
+    setSelectedInstalacion(normalized)
+    setIsEditDialogOpen(true)
+  }
+
+  const handleEditInstalacion = async (updated: Instalacion) => {
+    try {
+      const id_organizacion_sucursal = normalizeOrganizacionSucursalId(Number(updated.id_empresa_sucursal))
+      if (!id_organizacion_sucursal) {
+        throw new Error("Sucursal inválida")
+      }
+
+      await updateInstalacion(updated.id_instalacion, {
+        id_organizacion_sucursal,
+        nombre_instalacion: updated.nombre_instalacion,
+        fecha_instalacion: updated.fecha_instalacion,
+        estado_operativo: updated.estado_operativo,
+        descripcion: updated.descripcion,
+        tipo_uso: updated.tipo_uso,
+        id_proceso: updated.id_proceso,
+      } as any)
+
+      toast({
+        title: "Éxito",
+        description: "Instalación actualizada correctamente",
+      })
+      setIsEditDialogOpen(false)
+      setSelectedInstalacion(null)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al actualizar instalación",
+        variant: "destructive",
+      })
+      throw error
     }
   }
 
@@ -249,14 +330,17 @@ export default function InstalacionesPage() {
                       <p className="text-sm text-muted-foreground mt-1">ID: {instalacion.id_instalacion}</p>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(instalacion)}>
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() =>
-                          handleDeleteInstalacion(instalacion.id_instalacion, instalacion.nombre_instalacion)
+                          handleDeleteInstalacion(
+                            instalacion.id_instalacion,
+                            instalacion.nombre_instalacion ?? instalacion.nombre ?? "Instalación"
+                          )
                         }
                       >
                         <Trash2 className="h-4 w-4" />
@@ -264,10 +348,12 @@ export default function InstalacionesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant={getEstadoBadgeVariant(instalacion.estado_operativo)}>
-                      {instalacion.estado_operativo}
+                    <Badge variant={getEstadoBadgeVariant(instalacion.estado_operativo ?? "activo")}>
+                      {instalacion.estado_operativo ?? "activo"}
                     </Badge>
-                    <Badge variant={getTipoUsoBadgeVariant(instalacion.tipo_uso)}>{instalacion.tipo_uso}</Badge>
+                    <Badge variant={getTipoUsoBadgeVariant(instalacion.tipo_uso ?? "otros")}>
+                      {instalacion.tipo_uso ?? "otros"}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -278,23 +364,23 @@ export default function InstalacionesPage() {
                       <div className="flex items-center gap-2 text-sm">
                         <Calendar className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium">Instalada:</span>
-                        <span>{new Date(instalacion.fecha_instalacion).toLocaleDateString()}</span>
+                        <span>{new Date(instalacion.fecha_instalacion || instalacion.created_at).toLocaleDateString()}</span>
                       </div>
 
                       <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium">Empresa:</span>
-                        <span>{instalacion.nombre_empresa || `ID ${instalacion.id_empresa_sucursal}`}</span>
+                        <span>{(instalacion as InstalacionUI).nombre_empresa || `ID ${instalacion.id_empresa_sucursal || instalacion.id_sucursal}`}</span>
                       </div>
 
                       <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium">Proceso:</span>
-                        <span>{instalacion.nombre_proceso || `ID ${instalacion.id_proceso}`}</span>
+                        <span>{(instalacion as InstalacionUI).nombre_proceso || `ID ${(instalacion as InstalacionUI).id_proceso || '-'}`}</span>
                       </div>
 
-                      {instalacion.nombre_especie && (
+                      {(instalacion as InstalacionUI).nombre_especie && (
                         <div className="flex items-center gap-2 text-sm">
                           <span className="font-medium">Especie:</span>
-                          <span>{instalacion.nombre_especie}</span>
+                          <span>{(instalacion as InstalacionUI).nombre_especie}</span>
                         </div>
                       )}
                     </div>
@@ -305,10 +391,16 @@ export default function InstalacionesPage() {
           </div>
         )}
 
-        <AddInstalacionDialog
-          open={isAddDialogOpen}
-          onOpenChange={setIsAddDialogOpen}
-          onAddInstalacion={handleAddInstalacion}
+        <AddInstalacionDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onAddInstalacion={handleAddInstalacion} />
+
+        <EditInstalacionDialog
+          open={isEditDialogOpen}
+          onOpenChange={(open) => {
+            setIsEditDialogOpen(open)
+            if (!open) setSelectedInstalacion(null)
+          }}
+          instalacion={selectedInstalacion}
+          onEditInstalacion={handleEditInstalacion}
         />
       </div>
     </div>

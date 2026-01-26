@@ -282,7 +282,7 @@ export function AdvancedChart({
     const commonProps = {
       data: processedData,
       margin: { top: 20, right: 30, left: 20, bottom: 60 },
-      onClick: onDataPointClick,
+      onClick: onDataPointClick ? ((data: any) => onDataPointClick(data?.activePayload?.[0]?.payload)) : undefined,
     }
 
     const xAxisProps = {
@@ -417,7 +417,7 @@ export function AdvancedChart({
                   strokeWidth={s.strokeWidth || 2}
                   dot={(props: any) => {
                     const { cx, cy, payload } = props
-                    if (!payload || !s.optimalMin || !s.optimalMax) return false
+                    if (!payload || !s.optimalMin || !s.optimalMax) return <g />
 
                     const value = payload[s.key]
                     const isOutOfRange = value < s.optimalMin || value > s.optimalMax
@@ -425,7 +425,7 @@ export function AdvancedChart({
                     if (isOutOfRange) {
                       return <circle cx={cx} cy={cy} r={4} fill="#ef4444" stroke="#ffffff" strokeWidth={2} />
                     }
-                    return false
+                    return <g />
                   }}
                   activeDot={{ r: 6, stroke: s.color, strokeWidth: 2, fill: "#ffffff" }}
                   name={s.name}
@@ -505,7 +505,7 @@ export function AdvancedChart({
         {/* Estadísticas rápidas */}
         {stats && stats.length > 0 && (
           <div className="flex flex-wrap gap-4 mt-4">
-            {stats.map((stat) => (
+            {stats.filter(Boolean).map((stat) => stat && (
               <div key={stat.key} className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }} />
                 <div className="text-sm">

@@ -94,7 +94,7 @@ export class JWTUtils {
    */
   static generateAccessToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
     return jwt.sign(payload, JWT_SECRET, {
-      expiresIn: JWT_EXPIRES_IN,
+      expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
       issuer: 'aquamonitor',
       audience: 'aquamonitor-users'
     })
@@ -105,7 +105,7 @@ export class JWTUtils {
    */
   static generateRefreshToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
     return jwt.sign(payload, JWT_SECRET, {
-      expiresIn: REFRESH_TOKEN_EXPIRES_IN,
+      expiresIn: REFRESH_TOKEN_EXPIRES_IN as jwt.SignOptions['expiresIn'],
       issuer: 'aquamonitor',
       audience: 'aquamonitor-refresh'
     })
@@ -370,7 +370,7 @@ export const ROLE_PERMISSIONS = {
  * Verifica si un usuario tiene un permiso específico
  */
 export function hasPermission(userRole: number, permission: string): boolean {
-  const permissions = ROLE_PERMISSIONS[userRole as keyof typeof ROLE_PERMISSIONS]
+  const permissions = ROLE_PERMISSIONS[userRole as keyof typeof ROLE_PERMISSIONS] as readonly string[] | undefined
   return permissions ? permissions.includes(permission) : false
 }
 

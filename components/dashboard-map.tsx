@@ -29,6 +29,24 @@ interface DashboardMapProps {
   selectedBranchId?: string | null
 }
 
+// Helper to get coordinates from branch
+function getBranchCoordinates(branch: { coordinates?: [number, number]; location?: { lat: number; lng: number } }): [number, number] | null {
+  if (branch.coordinates) return branch.coordinates
+  if (branch.location && typeof branch.location === 'object' && 'lat' in branch.location) {
+    return [branch.location.lat, branch.location.lng]
+  }
+  return null
+}
+
+// Helper to get location string from branch
+function getBranchLocation(branch: { location?: string | { lat: number; lng: number } | null; address?: { street?: string } | null; calle?: string }): string {
+  if (typeof branch.location === 'string') return branch.location
+  if (branch.location && typeof branch.location === 'object') {
+    return `${branch.location.lat}, ${branch.location.lng}`
+  }
+  return branch.address?.street || branch.calle || ''
+}
+
 export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapProps) {
   const { branches, loading } = useBranches()
   const [flyToPosition, setFlyToPosition] = useState<[number, number] | null>(null)
@@ -48,9 +66,10 @@ export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapP
     }
 
     // Find the branch and set the flyToPosition
-    const branch = branches.find((b) => b.id === branchId)
+    const branch = branches.find((b) => String(b.id) === branchId)
     if (branch) {
-      setFlyToPosition(branch.coordinates)
+      const coords = getBranchCoordinates(branch)
+      if (coords) setFlyToPosition(coords)
     }
   }
 
@@ -60,23 +79,29 @@ export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapP
       setSelectedBranch(selectedBranchId)
 
       // Find the branch and set the flyToPosition
-      const branch = branches.find((b) => b.id === selectedBranchId)
+      const branch = branches.find((b) => String(b.id) === selectedBranchId)
       if (branch) {
-        setFlyToPosition(branch.coordinates)
+        const coords = getBranchCoordinates(branch)
+        if (coords) setFlyToPosition(coords)
       }
     }
   }, [selectedBranchId, branches, selectedBranch])
 
   // Count alerts for each branch
   const getBranchAlerts = (branchId: string) => {
-    const branch = branches.find((b) => b.id === branchId)
+    const branch = branches.find((b) => String(b.id) === branchId)
     if (!branch) return 0
 
     let alertCount = 0
-    branch.facilities.forEach((facility) => {
-      Object.entries(facility.waterQuality).forEach(([_, param]) => {
-        if (param.value < (param.minValue || 0) || param.value > (param.maxValue || 100)) {
-          alertCount++
+    const facilities = branch.facilities || []
+    facilities.forEach((facility) => {
+      const wq = facility.waterQuality || {}
+      Object.entries(wq).forEach(([_, param]) => {
+        const p = param as { value?: number; minValue?: number; maxValue?: number } | undefined
+        if (p && typeof p.value === 'number') {
+          if (p.value < (p.minValue || 0) || p.value > (p.maxValue || 100)) {
+            alertCount++
+          }
         }
       })
     })
@@ -85,18 +110,22 @@ export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapP
 
   // Filtrar sucursales
   const filteredBranches = branches.filter((branch) => {
+    const locationStr = getBranchLocation(branch).toLowerCase()
+    const facilities = branch.facilities || []
+    
     // Filtrar por término de búsqueda
     const matchesSearch =
       branch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      branch.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      branch.facilities.some((f) => f.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      locationStr.includes(searchTerm.toLowerCase()) ||
+      facilities.some((f) => f.name?.toLowerCase().includes(searchTerm.toLowerCase()))
 
     // Filtrar por estado
+    const branchIdStr = String(branch.id)
     const matchesStatus =
       statusFilter === "todos" ||
       (statusFilter === "active" && branch.status === "active") ||
       (statusFilter === "inactive" && branch.status === "inactive") ||
-      (statusFilter === "alerts" && getBranchAlerts(branch.id) > 0)
+      (statusFilter === "alerts" && getBranchAlerts(branchIdStr) > 0)
 
     return matchesSearch && matchesStatus
   })
@@ -162,14 +191,18 @@ export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapP
         <div className="overflow-y-auto flex-1 divide-y divide-gray-200 dark:divide-gray-700">
           {filteredBranches.length > 0 ? (
             filteredBranches.map((branch) => {
-              const alertCount = getBranchAlerts(branch.id)
+              const branchIdStr = String(branch.id)
+              const alertCount = getBranchAlerts(branchIdStr)
+              const locationStr = getBranchLocation(branch)
+              const facilities = branch.facilities || []
+              
               return (
                 <div
                   key={branch.id}
                   className={`p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
-                    selectedBranch === branch.id ? "bg-blue-50 dark:bg-blue-900/20" : ""
+                    selectedBranch === branchIdStr ? "bg-blue-50 dark:bg-blue-900/20" : ""
                   }`}
-                  onClick={() => handleBranchSelect(branch.id)}
+                  onClick={() => handleBranchSelect(branchIdStr)}
                 >
                   <div className="flex justify-between items-center">
                     <h4 className="font-medium">{branch.name}</h4>
@@ -179,12 +212,12 @@ export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapP
                   </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center">
                     <MapPin className="h-3 w-3 mr-1" />
-                    {branch.location}
+                    {locationStr}
                   </p>
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                       <Droplets className="h-3.5 w-3.5 mr-1" />
-                      {branch.facilities.length} instalaciones
+                      {facilities.length} instalaciones
                     </div>
                     {alertCount > 0 && (
                       <div className="flex items-center text-amber-600 dark:text-amber-400 text-sm">
@@ -224,7 +257,7 @@ export function DashboardMap({ onBranchSelect, selectedBranchId }: DashboardMapP
               <CardContent className="p-2 text-center">
                 <p className="text-xs text-gray-500 dark:text-gray-400">Alertas</p>
                 <p className="text-lg font-medium">
-                  {branches.reduce((total, branch) => total + getBranchAlerts(branch.id), 0)}
+                  {branches.reduce((total, branch) => total + getBranchAlerts(String(branch.id)), 0)}
                 </p>
               </CardContent>
             </Card>

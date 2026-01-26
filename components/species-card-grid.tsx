@@ -12,10 +12,11 @@ import DeleteConfirmationDialog from "@/components/delete-confirmation-dialog"
 import { Progress } from "@/components/ui/progress"
 
 export function SpeciesCardGrid() {
-  const { species, parameters, speciesParameters, loading, error, hasActiveProcesses, deleteSpecies } = useSpecies()
+  const { species, parameters, speciesParameters, loading, error, loadSpecies, deleteSpecies } = useSpecies()
   const [speciesIdToDelete, setSpeciesIdToDelete] = useState<number | null>(null)
   const [speciesIdToEdit, setSpeciesIdToEdit] = useState<number | null>(null)
   const [speciesIdForParameters, setSpeciesIdForParameters] = useState<number | null>(null)
+  const speciesToEdit = speciesIdToEdit != null ? species.find((s) => s.id_especie === speciesIdToEdit) : null
 
   // Obtener los parámetros para una especie específica
   const getSpeciesParametersDetails = (speciesId: number) => {
@@ -76,7 +77,7 @@ export function SpeciesCardGrid() {
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {species.map((species) => {
-          const isActive = hasActiveProcesses(species.id_especie)
+          const isActive = species.estado === "activa"
           const speciesParams = getSpeciesParametersDetails(species.id_especie)
 
           return (
@@ -92,7 +93,7 @@ export function SpeciesCardGrid() {
                     <Fish className={`h-5 w-5 ${isActive ? "text-emerald-600" : "text-gray-500"}`} />
                     {species.nombre}
                   </CardTitle>
-                  <Badge variant={isActive ? "success" : "secondary"}>{isActive ? "Activo" : "Inactivo"}</Badge>
+                  <Badge variant={isActive ? "default" : "secondary"}>{isActive ? "Activo" : "Inactivo"}</Badge>
                 </div>
                 <CardDescription>
                   ID: {species.id_especie} {isActive && "• Con procesos activos"}
@@ -152,13 +153,14 @@ export function SpeciesCardGrid() {
       </div>
 
       {/* Diálogos para editar y eliminar */}
-      {speciesIdToEdit !== null && (
+      {speciesToEdit && (
         <EditSpeciesDialog
-          speciesId={speciesIdToEdit}
+          species={speciesToEdit}
           open={speciesIdToEdit !== null}
           onOpenChange={(open) => {
             if (!open) setSpeciesIdToEdit(null)
           }}
+          onSuccess={loadSpecies}
         />
       )}
 

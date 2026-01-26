@@ -109,7 +109,7 @@ export function calculateYAxisDomain(
 }
 
 // Función para reducir densidad de datos si es necesaria
-export function reduceDataDensity<T extends { timestamp: string }>(data: T[], maxPoints = 200): T[] {
+export function reduceDataDensity<T extends { timestamp: string | number }>(data: T[], maxPoints = 200): T[] {
   if (data.length <= maxPoints) return data
 
   const step = Math.ceil(data.length / maxPoints)

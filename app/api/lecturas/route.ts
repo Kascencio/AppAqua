@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
 import { JWTUtils } from "@/lib/auth-utils"
+import { parseDateForPrisma } from "@/lib/date-utils"
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
     const lecturas = await prisma.lectura.findMany({
       where: {
         id_sensor_instalado: { in: sensorIds },
-        fecha: { gte: new Date(from), lte: new Date(to) },
+        fecha: { gte: parseDateForPrisma(from)!, lte: parseDateForPrisma(to)! },
       },
     })
     return NextResponse.json(lecturas)
@@ -63,8 +64,8 @@ export async function POST(request: NextRequest) {
       data: {
         id_sensor_instalado: Number(body.id_sensor_instalado),
         valor: body.valor,
-        fecha: new Date(body.fecha),
-        hora: new Date(`1970-01-01T${body.hora}`),
+        fecha: parseDateForPrisma(body.fecha)!,
+        hora: parseDateForPrisma(`1970-01-01T${body.hora}`)!,
       },
     })
     return NextResponse.json(created, { status: 201 })

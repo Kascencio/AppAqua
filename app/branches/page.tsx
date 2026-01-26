@@ -29,7 +29,7 @@ import { useBranches } from "@/hooks/use-branches"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function BranchesPage() {
-  const { branches, loading, createBranch, updateBranch, deleteBranch, toggleBranchStatus } = useBranches()
+  const { branches, loading, addBranch, updateBranch, deleteBranch } = useBranches()
 
   const [searchTerm, setSearchTerm] = useState("")
   const [regionFilter, setRegionFilter] = useState("todas")
@@ -44,13 +44,27 @@ export default function BranchesPage() {
   const [deleteBranchOpen, setDeleteBranchOpen] = useState(false)
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null)
 
-  const toggleBranch = (branchId: string) => {
-    setExpandedBranch(expandedBranch === branchId ? null : branchId)
+  // Helper to get location as string
+  const getLocationString = (branch: Branch): string => {
+    if (typeof branch.location === 'string') return branch.location
+    if (branch.location && typeof branch.location === 'object') {
+      return `${branch.location.lat}, ${branch.location.lng}`
+    }
+    return branch.address?.street || branch.calle || ''
+  }
+
+  // Helper to get facilities safely
+  const getFacilities = (branch: Branch) => branch.facilities || []
+
+  const toggleBranch = (branchId: string | number) => {
+    const id = String(branchId)
+    setExpandedBranch(expandedBranch === id ? null : id)
     setExpandedFacility(null)
   }
 
-  const toggleFacility = (facilityId: string) => {
-    setExpandedFacility(expandedFacility === facilityId ? null : facilityId)
+  const toggleFacility = (facilityId: string | number) => {
+    const id = String(facilityId)
+    setExpandedFacility(expandedFacility === id ? null : id)
   }
 
   const handleEditBranch = (branch: Branch) => {
@@ -72,24 +86,29 @@ export default function BranchesPage() {
   }
 
   const handleToggleStatus = (branch: Branch) => {
-    toggleBranchStatus(branch.id)
+    // Toggle status via updateBranch
+    const newStatus = branch.estado_operativo === "activa" ? "inactiva" : "activa"
+    updateBranch(branch.id, { estado_operativo: newStatus })
   }
 
   const filteredBranches = branches.filter((branch) => {
+    const locationStr = getLocationString(branch).toLowerCase()
+    const facilities = getFacilities(branch)
+    
     // Filter by search term
     const matchesSearch =
       branch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      branch.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      branch.facilities.some((f) => f.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      locationStr.includes(searchTerm.toLowerCase()) ||
+      facilities.some((f) => f.name?.toLowerCase().includes(searchTerm.toLowerCase()))
 
     // Filter by region
-    const matchesRegion = regionFilter === "todas" || branch.location.toLowerCase().includes(regionFilter.toLowerCase())
+    const matchesRegion = regionFilter === "todas" || locationStr.includes(regionFilter.toLowerCase())
 
     // Filter by status
     const matchesStatus = statusFilter === "todos" || branch.status === statusFilter
 
     // Filter by facility type
-    const matchesType = typeFilter === "todos" || branch.facilities.some((f) => f.type === typeFilter)
+    const matchesType = typeFilter === "todos" || facilities.some((f) => f.type === typeFilter)
 
     return matchesSearch && matchesRegion && matchesStatus && matchesType
   })
@@ -189,19 +208,23 @@ export default function BranchesPage() {
           </div>
         ) : (
           filteredBranches.map((branch) => {
+            const facilities = getFacilities(branch)
             // Filter facilities based on typeFilter
             const filteredFacilities =
-              typeFilter === "todos" ? branch.facilities : branch.facilities.filter((f) => f.type === typeFilter)
+              typeFilter === "todos" ? facilities : facilities.filter((f) => f.type === typeFilter)
 
             if (typeFilter !== "todos" && filteredFacilities.length === 0) {
               return null
             }
 
+            const branchIdStr = String(branch.id)
+            const locationDisplay = getLocationString(branch)
+
             return (
               <Card key={branch.id} className="overflow-hidden">
                 <CardHeader className={`py-4 ${branch.status === "inactive" ? "bg-muted" : "bg-primary/5"}`}>
                   <div className="flex justify-between items-center">
-                    <div className="cursor-pointer" onClick={() => toggleBranch(branch.id)}>
+                    <div className="cursor-pointer" onClick={() => toggleBranch(branchIdStr)}>
                       <CardTitle className="text-xl flex items-center">
                         {branch.name}
                         <Badge variant={branch.status === "active" ? "default" : "outline"} className="ml-2">
@@ -209,12 +232,12 @@ export default function BranchesPage() {
                         </Badge>
                       </CardTitle>
                       <CardDescription className="flex items-center mt-1">
-                        <MapPin className="h-3 w-3 mr-1" /> {branch.location}
+                        <MapPin className="h-3 w-3 mr-1" /> {locationDisplay}
                       </CardDescription>
                     </div>
                     <div className="flex items-center">
                       <Badge variant="outline" className="mr-2">
-                        {branch.facilities.length} instalaciones
+                        {facilities.length} instalaciones
                       </Badge>
                       <div className="flex space-x-2 mr-2">
                         <Button variant="outline" size="icon" onClick={() => handleEditBranch(branch)}>
@@ -232,8 +255,8 @@ export default function BranchesPage() {
                           <Power className="h-4 w-4" />
                         </Button>
                       </div>
-                      <div className="cursor-pointer" onClick={() => toggleBranch(branch.id)}>
-                        {expandedBranch === branch.id ? (
+                      <div className="cursor-pointer" onClick={() => toggleBranch(branchIdStr)}>
+                        {expandedBranch === branchIdStr ? (
                           <ChevronUp className="h-5 w-5" />
                         ) : (
                           <ChevronDown className="h-5 w-5" />
@@ -243,46 +266,61 @@ export default function BranchesPage() {
                   </div>
                 </CardHeader>
 
-                {expandedBranch === branch.id && (
+                {expandedBranch === branchIdStr && (
                   <CardContent className="pt-4">
                     <h3 className="text-lg font-medium mb-4">Instalaciones</h3>
                     <div className="space-y-4">
-                      {filteredFacilities.map((facility) => (
-                        <Card key={facility.id} className="overflow-hidden">
-                          <CardHeader
-                            className="p-4 bg-muted/50 flex justify-between items-center cursor-pointer"
-                            onClick={() => toggleFacility(facility.id)}
-                          >
-                            <div>
-                              <h4 className="text-base font-medium">{facility.name}</h4>
-                              <p className="text-sm text-muted-foreground">Tipo: {facility.type}</p>
-                            </div>
-                            <div className="flex items-center space-x-4 flex-wrap">
-                              <div className="flex items-center text-sm">
-                                <Droplets className="h-4 w-4 mr-1 text-blue-500" />
-                                <span>{facility.waterQuality.ph.value} pH</span>
+                      {filteredFacilities.map((facility) => {
+                        const facilityIdStr = String(facility.id)
+                        const wq = facility.waterQuality as Record<string, { value?: number }> | undefined
+                        const phValue = wq?.ph?.value ?? '-'
+                        const tempValue = wq?.temperature?.value ?? '-'
+                        const oxygenValue = wq?.oxygen?.value ?? '-'
+                        
+                        return (
+                          <Card key={facility.id} className="overflow-hidden">
+                            <CardHeader
+                              className="p-4 bg-muted/50 flex justify-between items-center cursor-pointer"
+                              onClick={() => toggleFacility(facilityIdStr)}
+                            >
+                              <div>
+                                <h4 className="text-base font-medium">{facility.name}</h4>
+                                <p className="text-sm text-muted-foreground">Tipo: {facility.type}</p>
                               </div>
-                              <div className="flex items-center text-sm">
-                                <Thermometer className="h-4 w-4 mr-1 text-red-500" />
-                                <span>{facility.waterQuality.temperature.value}°C</span>
+                              <div className="flex items-center space-x-4 flex-wrap">
+                                <div className="flex items-center text-sm">
+                                  <Droplets className="h-4 w-4 mr-1 text-blue-500" />
+                                  <span>{phValue} pH</span>
+                                </div>
+                                <div className="flex items-center text-sm">
+                                  <Thermometer className="h-4 w-4 mr-1 text-red-500" />
+                                  <span>{tempValue}°C</span>
+                                </div>
+                                <div className="flex items-center text-sm">
+                                  <Activity className="h-4 w-4 mr-1 text-green-500" />
+                                  <span>{oxygenValue} mg/L</span>
+                                </div>
+                                {expandedFacility === facilityIdStr ? (
+                                  <ChevronUp className="h-5 w-5 ml-2" />
+                                ) : (
+                                  <ChevronDown className="h-5 w-5 ml-2" />
+                                )}
                               </div>
-                              <div className="flex items-center text-sm">
-                                <Activity className="h-4 w-4 mr-1 text-green-500" />
-                                <span>{facility.waterQuality.oxygen.value} mg/L</span>
-                              </div>
-                              {expandedFacility === facility.id ? (
-                                <ChevronUp className="h-5 w-5 ml-2" />
-                              ) : (
-                                <ChevronDown className="h-5 w-5 ml-2" />
-                              )}
-                            </div>
-                          </CardHeader>
+                            </CardHeader>
 
-                          {expandedFacility === facility.id && (
-                            <FacilityDetails facility={facility} branchId={branch.id} />
-                          )}
-                        </Card>
-                      ))}
+                            {expandedFacility === facilityIdStr && (
+                              <FacilityDetails 
+                                name={facility.name}
+                                address={String(facility.description ?? 'N/A')}
+                                city=""
+                                state=""
+                                zip=""
+                                phoneNumber=""
+                              />
+                            )}
+                          </Card>
+                        )
+                      })}
                     </div>
                   </CardContent>
                 )}
@@ -292,12 +330,15 @@ export default function BranchesPage() {
         )}
       </div>
 
-      <AddBranchDialog open={addBranchOpen} onOpenChange={setAddBranchOpen} onAddBranch={createBranch} />
+      <AddBranchDialog open={addBranchOpen} onOpenChange={setAddBranchOpen} onAddBranch={addBranch} />
 
       <EditBranchDialog
         open={editBranchOpen}
         onOpenChange={setEditBranchOpen}
-        onUpdateBranch={updateBranch}
+        onEditBranch={(updated) => {
+          updateBranch(updated.id_empresa_sucursal, updated)
+          setEditBranchOpen(false)
+        }}
         branch={selectedBranch}
       />
 

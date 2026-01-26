@@ -1,23 +1,28 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import type { SensorInstalado } from "@/types/sensor-instalado"
-import { api } from "@/lib/api"
+import { backendApi } from "@/lib/backend-client"
+import type { SensorInstalado } from "@/types"
 
 export interface SensorCompleto extends SensorInstalado {
+  id?: string | number // Alias for id_sensor_instalado
   name: string
   type: string
   unit: string
   modelo?: string
   marca?: string
   rango_medicion?: string
-  branchId: string
+  branchId: string | number
   branchName: string
+  facilityId?: string | number
   facilityName: string
   status: "active" | "inactive" | "alert" | "offline" | "maintenance"
   currentParameter?: string
   lastReading?: number
   lastUpdated?: Date
+  notes?: string
+  parameters?: string[]
+  location?: string
 }
 
 export function useSensors() {
@@ -31,40 +36,77 @@ export function useSensors() {
     setLoading(true)
     setError(null)
     try {
-      // Obtener sensores instalados
-      const [sensoresRes, catalogoRes, instalacionesRes, sucursalesRes] = await Promise.all([
-        api.get<SensorInstalado[]>("/sensores-instalados").catch(() => []),
-        api.get<any[]>("/catalogo-sensores").catch(() => []),
-        api.get<any[]>("/instalaciones").catch(() => []),
-        api.get<any[]>("/sucursales").catch(() => []),
+      // El backend externo devuelve LISTAS como arrays (no paginadas).
+      // Además, /sensores-instalados incluye `instalacion` y `catalogo_sensores` embebidos.
+      const [sensoresResp, sucursalesResp] = await Promise.all([
+        backendApi.getSensoresInstalados({ page: 1, limit: 1000 }).catch(() => [] as any),
+        backendApi.getSucursales({ page: 1, limit: 1000 }).catch(() => [] as any),
       ])
 
-      const sensores = sensoresRes
-      const catalogo = catalogoRes
-      const instalaciones = instalacionesRes
-      const sucursales = sucursalesRes
+      const sensoresPayload: any = sensoresResp
+      const sensores: any[] = Array.isArray(sensoresPayload) ? sensoresPayload : (sensoresPayload?.data || [])
 
-      // Crear mapas auxiliares
-      const catalogoById = new Map<number, any>(catalogo.map((c) => [c.id_sensor, c]))
-      const instalacionesById = new Map<number, any>(instalaciones.map((i) => [i.id_instalacion, i]))
+      const sucursalesPayload: any = sucursalesResp
+      const sucursales: any[] = Array.isArray(sucursalesPayload) ? sucursalesPayload : (sucursalesPayload?.data || [])
+
       const sucursalNombreById = new Map<number, string>(
-        sucursales.map((s: any) => [s.id_organizacion_sucursal, s.nombre_sucursal])
+        sucursales
+          .map((s) => [
+            Number(s.id_sucursal ?? s.id_organizacion_sucursal ?? 0),
+            String(s.nombre ?? s.nombre_sucursal ?? ""),
+          ] as [number, string])
+          .filter(([id, name]) => Number(id) > 0 && !!name),
       )
 
-      // Para cada sensor, obtener su última lectura de resumen_lectura_horaria o lectura directa
-      // Nota: simplificamos usando /api/lecturas?instalacion=... en rango de las últimas 6 horas
-      const now = new Date()
-      const from = new Date(now.getTime() - 6 * 60 * 60 * 1000)
-
-      // Agrupar por instalación para minimizar requests
-      const sensoresPorInstalacion = new Map<number, SensorInstalado[]>()
-      for (const s of sensores) {
-        const arr = sensoresPorInstalacion.get(s.id_instalacion) || []
-        arr.push(s)
-        sensoresPorInstalacion.set(s.id_instalacion, arr)
+      const lecturaTimestamp = (l: any): string | null => {
+        const ts = l?.tomada_en || (l?.fecha && l?.hora ? `${l.fecha}T${l.hora}` : l?.created_at) || l?.fecha
+        if (!ts) return null
+        const d = new Date(ts)
+        return Number.isNaN(d.getTime()) ? null : d.toISOString()
       }
 
-      const lecturasPorInstalacion = new Map<number, any[]>()
+      // Traer SOLO la última lectura de cada sensor (limit=1, ordenado desc) para acelerar
+      const now = new Date()
+      const desde = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+      const hasta = now.toISOString()
+
+      const lecturasBySensorId = new Map<number, any>()
+
+      // Usar concurrencia limitada para no saturar
+      const sensorsChunks: any[][] = []
+      for (let i = 0; i < sensores.length; i += 5) {
+        sensorsChunks.push(sensores.slice(i, i + 5))
+      }
+
+      for (const chunk of sensorsChunks) {
+        await Promise.all(
+          chunk.map(async (s) => {
+            const sensorInstaladoId = Number(s.id_sensor_instalado)
+            if (!sensorInstaladoId) return
+            try {
+              // Solo pedir 1 lectura (la más reciente) para acelerar
+              const resp = await backendApi.getLecturas({
+                sensorInstaladoId,
+                page: 1,
+                limit: 1,
+                desde,
+                hasta,
+              })
+              const payload: any = resp
+              const rows: any[] = Array.isArray(payload) ? payload : payload?.data || []
+              if (!rows.length) return
+
+              const lastRow = rows[0]
+              const ts = lecturaTimestamp(lastRow)
+              if (lastRow && ts) {
+                lecturasBySensorId.set(sensorInstaladoId, { ...lastRow, __ts: ts })
+              }
+            } catch {
+              // Si falla, dejamos sin lectura para ese sensor
+            }
+          }),
+        )
+      }
       // Note: We might need a better way to get readings in bulk or per sensor from the new API
       // For now, let's skip the readings fetch or assume we can get them differently
       // The original code fetched from /api/lecturas which was a local route.
@@ -72,7 +114,23 @@ export function useSensors() {
       // Based on previous context, there is no explicit bulk readings endpoint mentioned, 
       // but let's assume we can fetch them or leave them empty for now to avoid breaking.
 
-      const detectType = (name: string): string => {
+      const detectType = (name: string, rawType?: string, unit?: string): string => {
+        const t = String(rawType || '').toLowerCase()
+        const u = String(unit || '').toLowerCase()
+        if (t.includes('ph')) return 'ph'
+        if (t.includes('temp')) return 'temperature'
+        if (t.includes('ox') || t.includes('oxígeno') || t.includes('oxygen')) return 'oxygen'
+        if (t.includes('sal')) return 'salinity'
+        if (t.includes('turb')) return 'turbidity'
+        if (t.includes('nitrat')) return 'nitrates'
+        if (t.includes('amon') || t.includes('ammo')) return 'ammonia'
+        if (t.includes('baro') || t.includes('presión')) return 'barometric'
+        if (u.includes('ph')) return 'ph'
+        if (u.includes('°c') || u.includes('c')) return 'temperature'
+        if (u.includes('mg/l') && (name || '').toLowerCase().includes('ox')) return 'oxygen'
+        if (u.includes('ppt')) return 'salinity'
+        if (u.includes('ntu')) return 'turbidity'
+        if (u.includes('hpa')) return 'barometric'
         const n = (name || '').toLowerCase()
         if (n.includes('ph')) return 'ph'
         if (n.includes('temp')) return 'temperature'
@@ -86,35 +144,47 @@ export function useSensors() {
       }
 
       const mapped: SensorCompleto[] = sensores.map((s) => {
-        const cat = catalogoById.get(s.id_sensor)
-        const inst = instalacionesById.get(s.id_instalacion)
-        const lecturas = lecturasPorInstalacion.get(s.id_instalacion) || []
-        const lecturasSensor = lecturas.filter((l) => l.id_sensor_instalado === s.id_sensor_instalado)
+        const inst = (s as any).instalacion
+        const instalacionId = Number(s.id_instalacion ?? inst?.id_instalacion ?? 0)
+        const lastRow = lecturasBySensorId.get(Number(s.id_sensor_instalado))
+
         // última lectura
         let last: number | undefined = undefined
         let lastDate: Date | undefined = undefined
-        if (lecturasSensor.length > 0) {
-          const lastRow = lecturasSensor.reduce((a, b) => (new Date(a.fecha) > new Date(b.fecha) ? a : b))
+        if (lastRow) {
           last = Number(lastRow.valor)
-          lastDate = new Date(lastRow.fecha)
+          const ts = (lastRow as any).__ts || lecturaTimestamp(lastRow)
+          if (ts) lastDate = new Date(ts)
         }
 
-        // determinar estado por recencia
+        // determinar estado por activo del backend y recencia
         const nowTs = Date.now()
-        const isRecent = lastDate ? (nowTs - lastDate.getTime()) <= 10 * 60 * 1000 : false
-        const status: SensorCompleto['status'] = isRecent ? 'active' : 'offline'
+        const isRecent = lastDate ? (nowTs - lastDate.getTime()) <= 24 * 60 * 60 * 1000 : false
+        const backendActive = (s as any).activo
+        const status: SensorCompleto['status'] = backendActive === false ? 'inactive' : (isRecent ? 'active' : 'offline')
+
+        const catalogo = (s as any).catalogo_sensores
+        const sensorName = String(catalogo?.nombre ?? s.descripcion ?? `Sensor ${s.id_sensor_instalado}`)
+        const rawType = String((s as any).tipo_medida ?? (s as any).tipo ?? catalogo?.tipo_medida ?? catalogo?.tipo ?? '')
+        const unit = String(catalogo?.unidad_medida ?? s.unidad_medida ?? '')
+        const branchIdNum = Number(inst?.id_sucursal ?? inst?.id_organizacion_sucursal ?? (s as any).id_sucursal ?? 0)
 
         return {
-          ...s,
-          name: cat?.sensor || s.descripcion,
-          type: detectType(cat?.sensor || s.descripcion || ''),
-          unit: cat?.unidad_medida || '',
-          modelo: cat?.modelo,
-          marca: cat?.marca,
-          rango_medicion: cat?.rango_medicion,
-          branchId: String(inst?.id_empresa_sucursal || inst?.id_organizacion_sucursal || ''),
-          branchName: sucursalNombreById.get(inst?.id_empresa_sucursal || inst?.id_organizacion_sucursal) || `Sucursal ${inst?.id_empresa_sucursal || ''}`,
-          facilityName: inst?.nombre_instalacion || `Instalación ${s.id_instalacion}`,
+          // Keep legacy shape expected by the UI
+          id_sensor_instalado: s.id_sensor_instalado,
+          id_instalacion: instalacionId,
+          id_sensor: Number((s as any).id_sensor ?? catalogo?.id_sensor ?? 0),
+          fecha_instalada: String((s as any).fecha_instalada ?? (s as any).created_at ?? ''),
+          descripcion: String((s as any).descripcion ?? catalogo?.descripcion ?? ''),
+          name: sensorName,
+          type: detectType(sensorName, rawType, unit),
+          unit,
+          modelo: catalogo?.modelo ?? undefined,
+          marca: catalogo?.marca ?? undefined,
+          rango_medicion: catalogo?.rango_medicion ?? undefined,
+          branchId: String(branchIdNum || ''),
+          branchName: sucursalNombreById.get(branchIdNum) || `Sucursal ${branchIdNum || ''}`,
+          facilityName: String(inst?.nombre_instalacion ?? inst?.nombre ?? `Instalación ${instalacionId}`),
           status,
           lastReading: last,
           lastUpdated: lastDate || undefined,
@@ -143,11 +213,17 @@ export function useSensors() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.post<any>("/sensores-instalados", sensorData)
-      const newSensor = res
-      // We should probably refetch to get the full object with catalog data
+      // Map to backend shape
+      const payload = {
+        id_instalacion: Number(sensorData.id_instalacion),
+        tipo_medida: sensorData.type || sensorData.descripcion,
+        unidad_medida: sensorData.unit || '',
+        ubicacion: sensorData.location,
+        activo: true,
+      }
+      const res = await backendApi.createSensorInstalado(payload as any)
       await fetchSensors()
-      return newSensor
+      return res.data
     } catch (err) {
       setError("Error al crear sensor")
       throw err
@@ -161,7 +237,11 @@ export function useSensors() {
     setLoading(true)
     setError(null)
     try {
-      await api.put(`/sensores-instalados/${updatedSensor.id_sensor_instalado}`, updatedSensor)
+      const payload: any = {}
+      if (updatedSensor.type) payload.tipo_medida = updatedSensor.type
+      if (updatedSensor.unit) payload.unidad_medida = updatedSensor.unit
+      if (updatedSensor.status) payload.activo = updatedSensor.status !== 'inactive'
+      await backendApi.updateSensorInstalado(updatedSensor.id_sensor_instalado, payload)
       await fetchSensors()
     } catch (err) {
       setError("Error al actualizar sensor")
@@ -176,7 +256,7 @@ export function useSensors() {
     setLoading(true)
     setError(null)
     try {
-      await api.delete(`/sensores-instalados/${id}`)
+      await backendApi.deleteSensorInstalado(id)
       setSensors((prev) => prev.filter((s) => s.id_sensor_instalado !== id))
     } catch (err) {
       setError("Error al eliminar sensor")

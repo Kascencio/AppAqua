@@ -34,16 +34,22 @@ export default function LoginPage() {
     setIsLoading(true)
     setError("")
 
+    console.log('[Login Page] Attempting login...')
     const result = await login(formData.email, formData.password)
+    console.log('[Login Page] Login result:', result)
     
     if (result.success) {
       // Login exitoso, redirigir al dashboard
-      router.push('/')
+      console.log('[Login Page] Login successful, redirecting to dashboard')
+      // El middleware protege '/' vía cookie; el AuthContext ya setea `access_token`.
+      router.replace('/')
+      router.refresh()
+      setIsLoading(false)
     } else {
+      console.log('[Login Page] Login failed:', result.error)
       setError(result.error || "Error en el login")
+      setIsLoading(false)
     }
-    
-    setIsLoading(false)
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

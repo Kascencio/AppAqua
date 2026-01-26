@@ -60,12 +60,14 @@ export function useRolePermissions(): RolePermissions {
   }
 
   const getBranchAccess = (user: User): string[] => {
-    return user.branchAccess && Array.isArray(user.branchAccess) ? user.branchAccess : []
+    return user.branchAccess && Array.isArray(user.branchAccess)
+      ? user.branchAccess.map((id) => String(id))
+      : []
   }
 
   const getFacilityAccess = (user: User): string[] => {
     return (user as any).facilityAccess && Array.isArray((user as any).facilityAccess)
-      ? (user as any).facilityAccess
+      ? (user as any).facilityAccess.map((id: string | number) => String(id))
       : []
   }
 

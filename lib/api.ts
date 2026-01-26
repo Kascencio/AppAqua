@@ -1,18 +1,25 @@
-import { toast } from "sonner"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3300/api"
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "/external-api").replace(/\/$/, "")
 
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>
 }
 
 class ApiClient {
+  private getTokenFromCookie(): string | null {
+    if (typeof document === "undefined") return null
+
+    const cookies = document.cookie.split(";").map((c) => c.trim())
+    const tokenCookie = cookies.find((c) => c.startsWith("access_token="))
+    if (!tokenCookie) return null
+
+    const [, value] = tokenCookie.split("=")
+    return value ? decodeURIComponent(value) : null
+  }
+
   private getHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    }
+    const headers: Record<string, string> = {}
     if (typeof window !== "undefined") {
-      const token = localStorage.getItem("token")
+      const token = localStorage.getItem("token") || this.getTokenFromCookie()
       if (token) {
         headers["Authorization"] = `Bearer ${token}`
       }
@@ -22,10 +29,22 @@ class ApiClient {
 
   private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const url = `${API_URL}${endpoint}`
-    const headers = { ...this.getHeaders(), ...options.headers }
+    const headers: Record<string, string> = { ...this.getHeaders(), ...(options.headers ?? {}) }
+    const body = (options as any).body
+    const hasBody = body !== undefined && body !== null
+    const isFormData = typeof FormData !== "undefined" && body instanceof FormData
+
+    if (hasBody && !isFormData) {
+      const hasContentType = Object.keys(headers).some((h) => h.toLowerCase() === "content-type")
+      if (!hasContentType) headers["Content-Type"] = "application/json"
+    }
 
     try {
-      const response = await fetch(url, { ...options, headers })
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: options.credentials ?? "include",
+      })
 
       if (!response.ok) {
         // Handle 401 Unauthorized globally if needed

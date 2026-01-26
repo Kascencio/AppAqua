@@ -37,11 +37,11 @@ export default function EditSensorDialog({
 }: EditSensorDialogProps) {
   const [sensorType, setSensorType] = useState(sensor.type)
   const [sensorName, setSensorName] = useState(sensor.name || "")
-  const [branchId, setBranchId] = useState(sensor.branchId || "")
-  const [facilityId, setFacilityId] = useState(sensor.facilityId || "")
+  const [branchId, setBranchId] = useState(String(sensor.branchId || ""))
+  const [facilityId, setFacilityId] = useState(String(sensor.facilityId || ""))
   const [parameter, setParameter] = useState(sensor.currentParameter || "")
   const [unit, setUnit] = useState(sensor.unit || "")
-  const [status, setStatus] = useState(sensor.status || "active")
+  const [status, setStatus] = useState<"active" | "inactive" | "alert" | "offline" | "maintenance">(sensor.status || "active")
   const [notes, setNotes] = useState(sensor.notes || "")
   const [facilities, setFacilities] = useState<{ id: string; name: string; type: string }[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -51,13 +51,13 @@ export default function EditSensorDialog({
   // Actualizar las instalaciones cuando cambia la sucursal seleccionada
   useEffect(() => {
     if (branchId) {
-      const selectedBranch = branches.find((b) => b.id === branchId)
+      const selectedBranch = branches.find((b) => String(b.id) === branchId)
       if (selectedBranch) {
         setFacilities(
-          selectedBranch.facilities.map((f) => ({
-            id: f.id,
+          (selectedBranch.facilities || []).map((f) => ({
+            id: String(f.id),
             name: f.name,
-            type: f.type,
+            type: f.type || "",
           })),
         )
         setValidationStatus("valid")
@@ -76,8 +76,8 @@ export default function EditSensorDialog({
     if (open) {
       setSensorType(sensor.type)
       setSensorName(sensor.name || "")
-      setBranchId(sensor.branchId || "")
-      setFacilityId(sensor.facilityId || "")
+      setBranchId(String(sensor.branchId || ""))
+      setFacilityId(String(sensor.facilityId || ""))
       setParameter(sensor.currentParameter || "")
       setUnit(sensor.unit || "")
       setStatus(sensor.status || "active")
@@ -129,8 +129,8 @@ export default function EditSensorDialog({
 
     // Validate branch-facility relationship
     if (branchId && facilityId) {
-      const selectedBranch = branches.find((b) => b.id === branchId)
-      const facilityExists = selectedBranch?.facilities.some((f) => f.id === facilityId)
+      const selectedBranch = branches.find((b) => String(b.id) === branchId)
+      const facilityExists = (selectedBranch?.facilities || []).some((f) => String(f.id) === facilityId)
       if (!facilityExists) {
         newErrors.facilityId = "La instalación seleccionada no pertenece a la sucursal"
       }
@@ -177,7 +177,7 @@ export default function EditSensorDialog({
     }
   }
 
-  const selectedBranch = branches.find((b) => b.id === branchId)
+  const selectedBranch = branches.find((b) => String(b.id) === branchId)
   const selectedFacility = facilities.find((f) => f.id === facilityId)
 
   // Check if sensor location has changed
@@ -263,7 +263,7 @@ export default function EditSensorDialog({
 
             <div className="grid gap-2">
               <Label htmlFor="sensor-status">Estado del Sensor</Label>
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={(val) => setStatus(val as "active" | "inactive" | "alert" | "offline" | "maintenance")}>
                 <SelectTrigger id="sensor-status">
                   <SelectValue placeholder="Seleccionar estado" />
                 </SelectTrigger>
@@ -286,17 +286,21 @@ export default function EditSensorDialog({
                   <SelectValue placeholder="Seleccionar sucursal" />
                 </SelectTrigger>
                 <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name} - {branch.location}
-                    </SelectItem>
-                  ))}
+                  {branches.map((branch) => {
+                    const loc = branch.location
+                    const locStr = typeof loc === 'string' ? loc : loc ? `${loc.lat}, ${loc.lng}` : ''
+                    return (
+                      <SelectItem key={branch.id} value={String(branch.id)}>
+                        {branch.name} - {locStr}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
               {errors.branchId && <p className="text-sm text-red-500">{errors.branchId}</p>}
               {selectedBranch && (
                 <p className="text-xs text-green-600">
-                  ✓ Sucursal seleccionada: {selectedBranch.name} ({selectedBranch.facilities.length} instalaciones
+                  ✓ Sucursal seleccionada: {selectedBranch.name} ({(selectedBranch.facilities || []).length} instalaciones
                   disponibles)
                 </p>
               )}

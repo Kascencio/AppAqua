@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { 
-  PasswordUtils, 
-  JWTUtils, 
-  ValidationUtils, 
-  RateLimitUtils, 
+import {
+  PasswordUtils,
+  JWTUtils,
+  ValidationUtils,
+  RateLimitUtils,
   SecurityLogger,
-  USER_ROLES 
+  USER_ROLES
 } from '@/lib/auth-utils'
 
 export async function POST(request: NextRequest) {
@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const clientIP = request.headers.get('x-forwarded-for') || 
-                    request.headers.get('x-real-ip') || 
-                    'unknown'
+    const clientIP = request.headers.get('x-forwarded-for') ||
+      request.headers.get('x-real-ip') ||
+      'unknown'
 
     if (!RateLimitUtils.checkRateLimit(clientIP)) {
       SecurityLogger.logFailedLogin(clientIP, correo, 'Rate limit exceeded')
@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
     })
 
     const branchAccess = user.asignacion_usuario
-      .filter(a => a.id_empresa_sucursal !== null)
-      .map(a => String(a.id_empresa_sucursal))
+      .filter(a => a.id_organizacion_sucursal !== null)
+      .map(a => String(a.id_organizacion_sucursal))
     const facilityAccess: string[] = []
 
     const userData = {

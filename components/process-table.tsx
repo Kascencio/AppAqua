@@ -4,12 +4,12 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Eye, Calendar, Fish, MapPin, Target } from "lucide-react"
-import type { Proceso } from "@/types/proceso"
+import type { ProcesoConCalculos } from "@/types/proceso"
 import type { Instalacion } from "@/types/instalacion"
 import type { Especie } from "@/types/especie"
 
 interface ProcessTableProps {
-  procesos: Proceso[]
+  procesos: ProcesoConCalculos[]
   instalaciones: Instalacion[]
   especies: Especie[]
   onVerMonitoreo: (id_proceso: number) => void
@@ -23,7 +23,7 @@ export function ProcessTable({ procesos, instalaciones, especies, onVerMonitoreo
 
   const getEspecieNombre = (id_especie: number) => {
     const especie = especies.find((e) => e.id_especie === id_especie)
-    return especie ? especie.nombre_comun : "—"
+    return especie ? especie.nombre : "—"
   }
 
   const getEstadoBadgeVariant = (estado?: string) => {
@@ -84,7 +84,7 @@ export function ProcessTable({ procesos, instalaciones, especies, onVerMonitoreo
               <TableRow key={proceso.id_proceso}>
                 <TableCell>
                   <div>
-                    <p className="font-medium">{proceso.nombre_proceso || `Proceso #${proceso.id_proceso}`}</p>
+                    <p className="font-medium">{proceso.codigo_proceso || `Proceso #${proceso.id_proceso}`}</p>
                     {proceso.descripcion && (
                       <p className="text-sm text-muted-foreground truncate max-w-xs">{proceso.descripcion}</p>
                     )}

@@ -34,12 +34,21 @@ import { useToast } from "@/hooks/use-toast"
 
 // Tipo para almacenar la información de una instalación con su sucursal
 interface FacilityWithBranch extends Facility {
-  branchId: string
+  branchId: string | number
   branchName: string
   branchLocation: string
   capacity?: number
   description?: string
-  speciesId?: number // Cambiado a number para alinearse con id_especie
+  speciesId?: number | string
+}
+
+// Helper to get location string from branch
+function getBranchLocation(branch: { location?: string | { lat: number; lng: number } | null; address?: { street?: string } | null; calle?: string }): string {
+  if (typeof branch.location === 'string') return branch.location
+  if (branch.location && typeof branch.location === 'object') {
+    return `${branch.location.lat}, ${branch.location.lng}`
+  }
+  return branch.address?.street || branch.calle || ''
 }
 
 export default function FacilitiesPage() {
@@ -66,17 +75,24 @@ export default function FacilitiesPage() {
     const facilitiesWithBranch: FacilityWithBranch[] = []
 
     branches.forEach((branch) => {
-      branch.facilities.forEach((facility) => {
+      const branchFacilities = branch.facilities || []
+      const branchLocationStr = getBranchLocation(branch)
+      
+      branchFacilities.forEach((facility) => {
         // Enrich facility data with additional properties
+        const facilityData = facility as { id: string | number; name: string; type?: string; capacity?: number; description?: string; speciesId?: number | string; [key: string]: unknown }
         facilitiesWithBranch.push({
-          ...facility,
+          ...facilityData,
+          id: facilityData.id as string | number,
+          name: facilityData.name as string,
+          type: (facilityData.type || 'estanque') as string,
           branchId: branch.id,
           branchName: branch.name,
-          branchLocation: branch.location,
-          capacity: facility.capacity || Math.floor(Math.random() * 5000) + 500, // Mock capacity if not present
-          description: facility.description || `Instalación de tipo ${facility.type} en ${branch.name}`,
-          speciesId: facility.speciesId ? Number(facility.speciesId) : undefined, // Convertir a number
-        })
+          branchLocation: branchLocationStr,
+          capacity: (facilityData.capacity || Math.floor(Math.random() * 5000) + 500) as number,
+          description: (facilityData.description || `Instalación de tipo ${facilityData.type} en ${branch.name}`) as string,
+          speciesId: facilityData.speciesId ? Number(facilityData.speciesId) : undefined,
+        } as FacilityWithBranch)
       })
     })
 
@@ -93,11 +109,19 @@ export default function FacilitiesPage() {
 
   const handleAddFacility = async (facilityData: Omit<Facility, "id" | "sensors" | "waterQuality">) => {
     try {
+      const data = facilityData as {
+        name: string
+        type: string
+        branchId?: string | number
+        capacity?: number
+        description?: string
+        speciesId?: string | number
+      }
       // Generate new facility ID
       const newId = `facility-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
       // Find the selected branch
-      const selectedBranch = branches.find((b) => b.id === facilityData.branchId)
+      const selectedBranch = branches.find((b) => String(b.id) === String(data.branchId))
       if (!selectedBranch) {
         toast({
           title: "Error",
@@ -110,14 +134,14 @@ export default function FacilitiesPage() {
       // Create new facility with mock water quality data
       const newFacility: FacilityWithBranch = {
         id: newId,
-        name: facilityData.name,
-        type: facilityData.type,
-        branchId: facilityData.branchId,
+        name: data.name,
+        type: data.type,
+        branchId: data.branchId || selectedBranch.id,
         branchName: selectedBranch.name,
-        branchLocation: selectedBranch.location,
-        capacity: facilityData.capacity || 1000,
-        description: facilityData.description || "",
-        speciesId: facilityData.speciesId ? Number(facilityData.speciesId) : undefined,
+        branchLocation: getBranchLocation(selectedBranch),
+        capacity: data.capacity || 1000,
+        description: data.description || "",
+        speciesId: data.speciesId ? Number(data.speciesId) : undefined,
         sensors: [], // Start with no sensors
         waterQuality: {
           // Mock initial water quality parameters
@@ -239,21 +263,24 @@ export default function FacilitiesPage() {
   const otrosCount = facilities.filter((f) => f.type !== "estanque" && f.type !== "purificacion").length
 
   // Contar sensores totales
-  const totalSensors = facilities.reduce((acc, facility) => acc + facility.sensors.length, 0)
+  const totalSensors = facilities.reduce((acc, facility) => acc + (facility.sensors?.length || 0), 0)
 
   // Contar alertas (parámetros fuera de rango)
   const alertCount = facilities.reduce((acc, facility) => {
     let facilityAlerts = 0
-    Object.entries(facility.waterQuality).forEach(([key, param]) => {
-      if (param.value < (param.minValue || 0) || param.value > (param.maxValue || 100)) {
-        facilityAlerts++
-      }
-    })
+    if (facility.waterQuality) {
+      Object.entries(facility.waterQuality).forEach(([key, param]) => {
+        if (param.value < (param.minValue || 0) || param.value > (param.maxValue || 100)) {
+          facilityAlerts++
+        }
+      })
+    }
     return acc + facilityAlerts
   }, 0)
 
   // Función para verificar si una instalación tiene alertas
   const hasAlerts = (facility: FacilityWithBranch): boolean => {
+    if (!facility.waterQuality) return false
     return Object.entries(facility.waterQuality).some(
       ([_, param]) => param.value < (param.minValue || 0) || param.value > (param.maxValue || 100),
     )
@@ -261,7 +288,7 @@ export default function FacilitiesPage() {
 
   // Función para obtener el color de estado de una instalación
   const getFacilityStatusColor = (facility: FacilityWithBranch): string => {
-    const branch = branches.find((b) => b.id === facility.branchId)
+    const branch = branches.find((b) => String(b.id) === String(facility.branchId))
     if (!branch || branch.status === "inactive") return "bg-gray-100 dark:bg-gray-800"
 
     return hasAlerts(facility) ? "bg-amber-50 dark:bg-amber-900/20" : "bg-green-50 dark:bg-green-900/20"
@@ -466,17 +493,17 @@ export default function FacilitiesPage() {
               </div>
             ) : (
               filteredFacilities.map((facility) => {
-                const branch = branches.find((b) => b.id === facility.branchId)
+                const branch = branches.find((b) => String(b.id) === String(facility.branchId))
                 const branchStatus = branch ? branch.status : "inactive"
                 const hasAlert = hasAlerts(facility)
 
                 return (
-                  <Card key={facility.id} className="overflow-hidden">
+                  <Card key={String(facility.id)} className="overflow-hidden">
                     <CardHeader className={`py-4 ${getFacilityStatusColor(facility)}`}>
                       <div className="flex justify-between items-center">
                         <div
                           className="flex items-center gap-3 cursor-pointer flex-1"
-                          onClick={() => toggleFacility(facility.id)}
+                          onClick={() => toggleFacility(String(facility.id))}
                         >
                           {getFacilityIcon(facility.type)}
                           <div className="flex-1">
@@ -492,7 +519,7 @@ export default function FacilitiesPage() {
                               </span>
                               <span className="flex items-center gap-1">
                                 <Users className="h-3 w-3" />
-                                {getSpeciesName(facility.speciesId)}
+                                {getSpeciesName(facility.speciesId != null ? Number(facility.speciesId) : undefined)}
                               </span>
                             </CardDescription>
                           </div>
@@ -515,8 +542,8 @@ export default function FacilitiesPage() {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                          <div className="cursor-pointer" onClick={() => toggleFacility(facility.id)}>
-                            {expandedFacility === facility.id ? (
+                          <div className="cursor-pointer" onClick={() => toggleFacility(String(facility.id))}>
+                            {expandedFacility === String(facility.id) ? (
                               <ChevronUp className="h-5 w-5" />
                             ) : (
                               <ChevronDown className="h-5 w-5" />
@@ -557,18 +584,18 @@ export default function FacilitiesPage() {
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-muted-foreground">Sensores:</span>
-                                  <span className="font-medium">{facility.sensors.length}</span>
+                                  <span className="font-medium">{facility.sensors?.length ?? 0}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-muted-foreground">Especie:</span>
-                                  <span className="font-medium">{getSpeciesName(facility.speciesId)}</span>
+                                  <span className="font-medium">{getSpeciesName(facility.speciesId != null ? Number(facility.speciesId) : undefined)}</span>
                                 </div>
                               </div>
                             </div>
                             <div>
                               <h3 className="text-lg font-medium mb-2">Parámetros Actuales</h3>
                               <div className="space-y-2">
-                                {Object.entries(facility.waterQuality).map(([key, param]) => {
+                                {Object.entries(facility.waterQuality || {}).map(([key, param]) => {
                                   const isOutOfRange =
                                     param.value < (param.minValue || 0) || param.value > (param.maxValue || 100)
 

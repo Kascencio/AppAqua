@@ -1,8 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { FixedSizeList as List, VariableSizeList } from "react-window"
+import { FixedSizeList as List, VariableSizeList, type ListOnScrollProps, type ListChildComponentProps } from "react-window"
 import { cn } from "@/lib/utils"
+
+const FixedList = List as unknown as React.ComponentType<any>
+const VariableList = VariableSizeList as unknown as React.ComponentType<any>
 
 interface VirtualListProps<T> {
   items: T[]
@@ -11,7 +14,7 @@ interface VirtualListProps<T> {
   renderItem: (props: { index: number; style: React.CSSProperties; data: T }) => React.ReactNode
   className?: string
   overscan?: number
-  onScroll?: (props: { scrollDirection: "forward" | "backward"; scrollOffset: number }) => void
+  onScroll?: (props: ListOnScrollProps) => void
 }
 
 export function VirtualList<T>({
@@ -26,38 +29,40 @@ export function VirtualList<T>({
   const isVariableHeight = typeof itemHeight === "function"
 
   const ItemRenderer = React.useCallback(
-    ({ index, style }: { index: number; style: React.CSSProperties }) => {
-      const item = items[index]
+    ({ index, style, data }: ListChildComponentProps<T[]>) => {
+      const item = data[index]
       return renderItem({ index, style, data: item })
     },
-    [items, renderItem],
+    [renderItem],
   )
 
   if (isVariableHeight) {
     return (
-      <VariableSizeList
+      <VariableList
         className={cn("scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100", className)}
         height={height}
         itemCount={items.length}
+        itemData={items}
         itemSize={itemHeight as (index: number) => number}
         overscanCount={overscan}
         onScroll={onScroll}
       >
         {ItemRenderer}
-      </VariableSizeList>
+      </VariableList>
     )
   }
 
   return (
-    <List
+    <FixedList
       className={cn("scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100", className)}
       height={height}
       itemCount={items.length}
+      itemData={items}
       itemSize={itemHeight as number}
       overscanCount={overscan}
       onScroll={onScroll}
     >
       {ItemRenderer}
-    </List>
+    </FixedList>
   )
 }

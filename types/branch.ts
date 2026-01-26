@@ -1,10 +1,7 @@
-import type { Facility } from "./facility"
-
-export interface Branch {
-  id: string
-  name: string
-  location: string
-  coordinates: [number, number] // [latitude, longitude]
-  status: "active" | "inactive"
-  facilities: Facility[]
-}
+/**
+ * @deprecated Use types from "@/types/empresa-sucursal" instead.
+ * This file re-exports for backward compatibility.
+ */
+export type { Branch, EmpresaSucursal } from "./empresa-sucursal"
+export { empresaSucursalToBranch } from "./empresa-sucursal"
+export type { Facility } from "./facility"

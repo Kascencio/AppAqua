@@ -90,7 +90,7 @@ export default function AddFacilityDialog({ open, onOpenChange, onAddFacility, b
   const watchedName = watch("name")
 
   // Get selected branch info
-  const selectedBranch = branches.find((b) => b.id === watchedBranchId)
+  const selectedBranch = branches.find((b) => String(b.id) === watchedBranchId)
 
   // Filter active branches only
   const activeBranches = branches.filter((branch) => branch.status === "active")
@@ -100,7 +100,7 @@ export default function AddFacilityDialog({ open, onOpenChange, onAddFacility, b
 
     try {
       // Validate branch exists and is active
-      const selectedBranch = branches.find((b) => b.id === data.branchId)
+      const selectedBranch = branches.find((b) => String(b.id) === data.branchId)
       if (!selectedBranch) {
         toast({
           title: "Error de validación",
@@ -120,7 +120,7 @@ export default function AddFacilityDialog({ open, onOpenChange, onAddFacility, b
       }
 
       // Check if facility name already exists in the branch
-      const nameExists = selectedBranch.facilities.some(
+      const nameExists = (selectedBranch.facilities || []).some(
         (facility) => facility.name.toLowerCase() === data.name.toLowerCase(),
       )
 
@@ -263,12 +263,16 @@ export default function AddFacilityDialog({ open, onOpenChange, onAddFacility, b
                     </SelectItem>
                   ) : (
                     activeBranches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
+                      <SelectItem key={String(branch.id)} value={String(branch.id)}>
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4" />
                           <div>
                             <div className="font-medium">{branch.name}</div>
-                            <div className="text-xs text-muted-foreground">{branch.location}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {typeof branch.location === 'string' ? branch.location :
+                               branch.location ? `${branch.location.lat}, ${branch.location.lng}` :
+                               branch.address?.street || ''}
+                            </div>
                           </div>
                         </div>
                       </SelectItem>
@@ -284,7 +288,11 @@ export default function AddFacilityDialog({ open, onOpenChange, onAddFacility, b
               )}
               {selectedBranch && (
                 <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-                  <strong>Sucursal seleccionada:</strong> {selectedBranch.name} - {selectedBranch.location}
+                  <strong>Sucursal seleccionada:</strong> {selectedBranch.name} - {
+                    typeof selectedBranch.location === 'string' ? selectedBranch.location :
+                    selectedBranch.location ? `${selectedBranch.location.lat}, ${selectedBranch.location.lng}` :
+                    selectedBranch.address?.street || ''
+                  }
                 </div>
               )}
             </div>

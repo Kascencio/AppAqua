@@ -77,9 +77,9 @@ export default function AddEspecieDialog({ open, onOpenChange, onAdd }: AddEspec
       setError(null)
 
       await onAdd({
+        nombre: form.nombre_comun.trim(),
         nombre_comun: form.nombre_comun.trim(),
         nombre_cientifico: form.nombre_cientifico.trim() || undefined,
-        parametros_optimos: form.parametros_optimos.trim() || undefined,
         descripcion: form.descripcion.trim() || undefined,
       })
 

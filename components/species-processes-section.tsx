@@ -8,15 +8,16 @@ import { BarChart3, Calendar, Building2, Eye } from "lucide-react"
 import { format, differenceInDays } from "date-fns"
 import { es } from "date-fns/locale"
 import type { Especie } from "@/types/especie"
+import type { ProcesoConCalculos } from "@/types/proceso"
 
 interface SpeciesProcessesSectionProps {
   species: Especie
 }
 
 export function SpeciesProcessesSection({ species }: SpeciesProcessesSectionProps) {
-  const { processesBySpecies, loading } = useProcesses()
+  const { processes, loading } = useProcesses()
 
-  const speciesProcesses = processesBySpecies[species.id_especie] || []
+  const speciesProcesses: ProcesoConCalculos[] = processes.filter((p) => p.id_especie === species.id_especie)
 
   if (loading) {
     return (
@@ -94,18 +95,18 @@ export function SpeciesProcessesSection({ species }: SpeciesProcessesSectionProp
       <CardContent>
         <div className="space-y-4">
           {speciesProcesses.slice(0, 5).map((process) => {
-            const duracionDias = differenceInDays(process.fechaFin, process.fechaInicio)
-            const diasTranscurridos = differenceInDays(new Date(), process.fechaInicio)
+            const duracionDias = differenceInDays(new Date(process.fecha_final), new Date(process.fecha_inicio))
+            const diasTranscurridos = differenceInDays(new Date(), new Date(process.fecha_inicio))
             const progreso = Math.min(Math.max((diasTranscurridos / duracionDias) * 100, 0), 100)
 
             return (
               <div
-                key={process.id}
+                key={process.id_proceso}
                 className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
               >
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <h4 className="font-medium">{process.nombre}</h4>
+                    <h4 className="font-medium">{process.codigo_proceso || `Proceso ${process.id_proceso}`}</h4>
                     <Badge
                       variant="secondary"
                       className={`text-xs ${
@@ -113,31 +114,31 @@ export function SpeciesProcessesSection({ species }: SpeciesProcessesSectionProp
                           ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
                           : process.estado === "completado"
                             ? "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-                            : process.estado === "planificado"
+                            : process.estado === "pausado"
                               ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                              : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+                              : "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
                       }`}
                     >
                       {process.estado === "activo"
                         ? "Activo"
                         : process.estado === "completado"
                           ? "Completado"
-                          : process.estado === "planificado"
-                            ? "Planificado"
-                            : "Cancelado"}
+                          : process.estado === "pausado"
+                            ? "Pausado"
+                            : "Extendido"}
                     </Badge>
                   </div>
 
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Building2 className="h-3 w-3" />
-                      <span>{process.instalacionNombre}</span>
+                      <span>{process.nombre_instalacion || "Instalación no especificada"}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       <span>
-                        {format(process.fechaInicio, "MMM yyyy", { locale: es })} -{" "}
-                        {format(process.fechaFin, "MMM yyyy", { locale: es })}
+                        {format(new Date(process.fecha_inicio), "MMM yyyy", { locale: es })} -{" "}
+                        {format(new Date(process.fecha_final), "MMM yyyy", { locale: es })}
                       </span>
                     </div>
                     <span>{duracionDias} días</span>
@@ -162,7 +163,7 @@ export function SpeciesProcessesSection({ species }: SpeciesProcessesSectionProp
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => (window.location.href = `/procesos/${process.id}`)}
+                  onClick={() => (window.location.href = `/procesos/${process.id_proceso}`)}
                   className="ml-4"
                 >
                   <Eye className="h-4 w-4 mr-1" />

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { ParametroMonitoreo } from "@/types/lectura"
 import { Thermometer, Droplets, Zap, Eye, Download, RefreshCw } from "lucide-react"
+import { backendApi, type Lectura as BackendLectura } from "@/lib/backend-client"
 
 interface ParameterMonitoringCardProps {
   parametro: ParametroMonitoreo
@@ -57,7 +58,7 @@ const getChartColor = (estado: string) => {
 
 export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardProps) {
   const [isRealTime, setIsRealTime] = useState(false)
-  const [lecturas, setLecturas] = useState(parametro.lecturas)
+  const [lecturas, setLecturas] = useState(parametro.lecturas ?? [])
   const [loading, setLoading] = useState(false)
 
   // Refetch de datos reales cada 30s en modo tiempo real
@@ -67,10 +68,45 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
       const fetchLecturas = async () => {
         setLoading(true)
         try {
-          const res = await fetch(`/api/lecturas?parametro=${parametro.id_parametro}&instalacion=${parametro.id_instalacion}`)
-          if (!res.ok) throw new Error("Error al obtener lecturas")
-          const data = await res.json()
-          setLecturas(data.lecturas || [])
+          const sensorInstaladoId = Number(
+            (parametro as any).sensorInstaladoId ??
+              (parametro as any).id_sensor_instalado ??
+              (parametro as any).id_sensor_instalado_id ??
+              (parametro as any).id_sensor,
+          )
+
+          if (!sensorInstaladoId || Number.isNaN(sensorInstaladoId)) {
+            // No hay forma confiable de refrescar sin sensorInstaladoId
+            return
+          }
+
+          const hasta = new Date().toISOString()
+          const desde = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+          const resp = await backendApi.getLecturas({
+            sensorInstaladoId,
+            page: 1,
+            limit: 5000,
+            desde,
+            hasta,
+          })
+
+          const payload: any = resp
+          const rows: BackendLectura[] = Array.isArray(payload) ? payload : (payload.data || [])
+
+          const mapped = rows
+            .map((l) => {
+              const ts = (l as any).tomada_en || ((l as any).fecha && (l as any).hora ? `${(l as any).fecha}T${(l as any).hora}` : (l as any).created_at)
+              const timestamp = ts ? new Date(ts).toISOString() : new Date().toISOString()
+              const valor = Number((l as any).valor ?? 0)
+              return {
+                timestamp,
+                valor,
+                estado: "normal",
+              }
+            })
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
+          setLecturas(mapped as any)
         } catch {
           // Mantener lecturas previas si hay error
         } finally {
@@ -80,7 +116,7 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
       fetchLecturas()
       interval = setInterval(fetchLecturas, 30000)
     } else {
-      setLecturas(parametro.lecturas)
+      setLecturas(parametro.lecturas ?? [])
     }
     return () => {
       if (interval) clearInterval(interval)
@@ -103,14 +139,16 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
   const downloadCSV = () => {
     if (chartData.length === 0) return
     let csvContent = "data:text/csv;charset=utf-8,"
-    csvContent += `Tiempo,${parametro.nombre} (${parametro.unidad})\n`
+    const nombre = parametro.nombre ?? parametro.nombre_parametro ?? "Parametro"
+    const unidad = parametro.unidad ?? parametro.unidad_medida ?? ""
+    csvContent += `Tiempo,${nombre} (${unidad})\n`
     for (let i = 0; i < chartData.length; i++) {
       csvContent += `${chartData[i].time},${chartData[i].valor}\n`
     }
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
-    link.setAttribute("download", `${parametro.nombre.toLowerCase().replace(/\s+/g, "_")}_data.csv`)
+    link.setAttribute("download", `${nombre.toLowerCase().replace(/\s+/g, "_")}_data.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -125,14 +163,14 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {getParameterIcon(parametro.nombre)}
-            <span className="font-medium text-sm">{parametro.nombre}</span>
-            <span className="text-xs text-muted-foreground">{parametro.unidad}</span>
+            {getParameterIcon(parametro.nombre ?? parametro.nombre_parametro ?? "")}
+            <span className="font-medium text-sm">{parametro.nombre ?? parametro.nombre_parametro}</span>
+            <span className="text-xs text-muted-foreground">{parametro.unidad ?? parametro.unidad_medida}</span>
           </div>
           <div className="flex items-center gap-2">
-            {parametro.alertas_count > 0 && (
+            {(parametro.alertas_count ?? 0) > 0 && (
               <Badge variant="destructive" className="text-xs">
-                {parametro.alertas_count}
+                {parametro.alertas_count ?? 0}
               </Badge>
             )}
             <Button
@@ -152,8 +190,8 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
         </div>
         <div className="text-xs text-muted-foreground">
           {isRealTime
-            ? `Tiempo real • Rango: ${parametro.rango_min} - ${parametro.rango_max}`
-            : `Promedio: ${parametro.promedio.toFixed(1)} ${parametro.unidad} • Rango: ${parametro.rango_min} - ${parametro.rango_max}`}
+            ? `Tiempo real • Rango: ${parametro.rango_min ?? 0} - ${parametro.rango_max ?? 0}`
+            : `Promedio: ${(parametro.promedio ?? 0).toFixed(1)} ${parametro.unidad ?? parametro.unidad_medida ?? ""} • Rango: ${parametro.rango_min ?? 0} - ${parametro.rango_max ?? 0}`}
         </div>
       </CardHeader>
 
@@ -165,7 +203,7 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
         {/* Estado actual */}
         <div className="flex items-center justify-between">
           <div
-            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(parametro.estado)}`}
+            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(parametro.estado ?? "normal")}`}
           >
             {parametro.estado === "normal" && "✓ Normal"}
             {parametro.estado === "advertencia" && "⚠️ Advertencia"}

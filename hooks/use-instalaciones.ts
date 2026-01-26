@@ -1,121 +1,149 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import type { Instalacion, InstalacionCompleta } from "@/types"
-import { api } from "@/lib/api"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { backendApi, type Instalacion, type PaginatedResponse } from "@/lib/backend-client"
 
-interface UseInstalacionesReturn {
-  instalaciones: InstalacionCompleta[]
-  instalacionesRaw: Instalacion[]
-  loading: boolean
-  error: string | null
-  refreshInstalaciones: () => Promise<void>
-  createInstalacion: (instalacion: Omit<Instalacion, "id_instalacion">) => Promise<void>
-  updateInstalacion: (id: number, instalacion: Partial<Instalacion>) => Promise<void>
-  deleteInstalacion: (id: number) => Promise<void>
-  getInstalacionById: (id: number) => InstalacionCompleta | undefined
-  getInstalacionesBySucursal: (sucursalId: number) => InstalacionCompleta[]
+export interface UseInstalacionesOptions {
+  page?: number
+  limit?: number
+  id_sucursal?: number
+  activo?: boolean
+  auto?: boolean
 }
 
-export function useInstalaciones(): UseInstalacionesReturn {
-  const [instalaciones, setInstalaciones] = useState<InstalacionCompleta[]>([])
-  const [instalacionesRaw, setInstalacionesRaw] = useState<Instalacion[]>([])
-  const [loading, setLoading] = useState(true)
+export interface UseInstalacionesResult {
+  instalaciones: Instalacion[]
+  loading: boolean
+  error: string | null
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+  refresh: () => Promise<void>
+  create: (data: Omit<Instalacion, "id_instalacion" | "created_at" | "updated_at">) => Promise<Instalacion>
+  update: (id: number, data: Partial<Instalacion>) => Promise<void>
+  remove: (id: number) => Promise<void>
+  // Aliases para compatibilidad con UI legacy
+  createInstalacion: (data: Omit<Instalacion, "id_instalacion" | "created_at" | "updated_at">) => Promise<Instalacion>
+  updateInstalacion: (id: number, data: Partial<Instalacion>) => Promise<void>
+  deleteInstalacion: (id: number) => Promise<void>
+  getById: (id: number) => Instalacion | undefined
+  getBySucursal: (sucursalId: number) => Instalacion[]
+  setPage: (p: number) => void
+  setLimit: (l: number) => void
+}
+
+export function useInstalaciones(options: UseInstalacionesOptions = {}): UseInstalacionesResult {
+  const [instalaciones, setInstalaciones] = useState<Instalacion[]>([])
+  const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
-  const refreshInstalaciones = async () => {
+  const [page, setPage] = useState<number>(options.page ?? 1)
+  const [limit, setLimit] = useState<number>(options.limit ?? 20)
+  const [total, setTotal] = useState<number>(0)
+  const [totalPages, setTotalPages] = useState<number>(0)
+
+  const fetchList = useCallback(async () => {
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
-      const data = await api.get<any[]>("/instalaciones")
-
-      // Map if necessary, similar to AppContext
-      const mapped: InstalacionCompleta[] = data.map((inst: any) => ({
-        id_instalacion: inst.id_instalacion,
-        id_empresa_sucursal: inst.id_empresa_sucursal || inst.id_organizacion_sucursal || 0,
-        nombre_instalacion: inst.nombre_instalacion,
-        fecha_instalacion: inst.fecha_instalacion,
-        estado_operativo: inst.estado_operativo === "activo" ? "activo" : "inactivo",
-        descripcion: inst.descripcion,
-        tipo_uso: inst.tipo_uso,
-        id_proceso: inst.id_proceso,
-        // We can't easily get helper fields here without fetching orgs/species/processes
-        // For now, leave them undefined or fetch them if needed
-      }))
-
-      setInstalaciones(mapped)
-      setInstalacionesRaw(mapped)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar instalaciones")
+      const res = await backendApi.getInstalaciones({
+        page,
+        limit,
+        id_sucursal: options.id_sucursal,
+        activo: options.activo,
+      })
+      const payload = res as any
+      const items: Instalacion[] = Array.isArray(payload) ? payload : (payload.data || [])
+      setInstalaciones(items)
+      setTotal(payload?.pagination?.total ?? items.length)
+      setTotalPages(payload?.pagination?.totalPages ?? 1)
+    } catch (e: any) {
+      console.error("[useInstalaciones] fetch error", e)
+      setError(e?.message || "Error al cargar instalaciones")
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, limit, options.id_sucursal, options.activo])
 
   useEffect(() => {
-    refreshInstalaciones()
-  }, [])
+    if (options.auto !== false) fetchList()
+  }, [fetchList, options.auto])
 
-  const createInstalacion = async (instalacionData: Omit<Instalacion, "id_instalacion">) => {
+  const refresh = useCallback(async () => {
+    await fetchList()
+  }, [fetchList])
+
+  const create = useCallback(async (data: Omit<Instalacion, "id_instalacion" | "created_at" | "updated_at">) => {
     setLoading(true)
     setError(null)
     try {
-      await api.post("/instalaciones", instalacionData)
-      await refreshInstalaciones()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al crear instalación")
-      throw err
+      const res = await backendApi.createInstalacion(data)
+      const created = ((res as any).data ?? res) as Instalacion
+      await fetchList()
+      return created
+    } catch (e: any) {
+      setError(e?.message || "Error al crear instalación")
+      throw e
     } finally {
       setLoading(false)
     }
-  }
+  }, [fetchList])
 
-  const updateInstalacion = async (id: number, updates: Partial<Instalacion>) => {
+  const update = useCallback(async (id: number, data: Partial<Instalacion>) => {
     setLoading(true)
     setError(null)
     try {
-      await api.put(`/instalaciones/${id}`, updates)
-      await refreshInstalaciones()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al actualizar instalación")
-      throw err
+      await backendApi.updateInstalacion(id, data)
+      await fetchList()
+    } catch (e: any) {
+      setError(e?.message || "Error al actualizar instalación")
+      throw e
     } finally {
       setLoading(false)
     }
-  }
+  }, [fetchList])
 
-  const deleteInstalacion = async (id: number) => {
+  const remove = useCallback(async (id: number) => {
     setLoading(true)
     setError(null)
     try {
-      await api.delete(`/instalaciones/${id}`)
-      await refreshInstalaciones()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al eliminar instalación")
-      throw err
+      await backendApi.deleteInstalacion(id)
+      await fetchList()
+    } catch (e: any) {
+      setError(e?.message || "Error al eliminar instalación")
+      throw e
     } finally {
       setLoading(false)
     }
-  }
+  }, [fetchList])
 
-  const getInstalacionById = (id: number): InstalacionCompleta | undefined => {
-    return instalaciones.find((i) => i.id_instalacion === id)
-  }
+  const getById = useCallback((id: number) => {
+    return instalaciones.find(inst => inst.id_instalacion === id)
+  }, [instalaciones])
 
-  const getInstalacionesBySucursal = (sucursalId: number): InstalacionCompleta[] => {
-    return instalaciones.filter((i) => i.id_empresa_sucursal === sucursalId)
-  }
+  const getBySucursal = useCallback((sucursalId: number) => {
+    return instalaciones.filter(inst => inst.id_sucursal === sucursalId)
+  }, [instalaciones])
 
-  return {
+  return useMemo(() => ({
     instalaciones,
-    instalacionesRaw,
     loading,
     error,
-    refreshInstalaciones,
-    createInstalacion,
-    updateInstalacion,
-    deleteInstalacion,
-    getInstalacionById,
-    getInstalacionesBySucursal,
-  }
+    page,
+    limit,
+    total,
+    totalPages,
+    refresh,
+    create,
+    update,
+    remove,
+    createInstalacion: create,
+    updateInstalacion: update,
+    deleteInstalacion: remove,
+    getById,
+    getBySucursal,
+    setPage,
+    setLimit,
+  }), [instalaciones, loading, error, page, limit, total, totalPages, refresh, create, update, remove, getById, getBySucursal])
 }

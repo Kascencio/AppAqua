@@ -22,7 +22,7 @@ export default function EspeciesPage() {
   // Calcular estadísticas
   const stats = {
     totalSpecies: species.length,
-    activeSpecies: species.filter((s) => s.estado === "activo").length,
+    activeSpecies: species.filter((s) => s.estado === "activa").length,
     totalParameters: parameters.length,
     configuredParameters: speciesParameters.length,
   }

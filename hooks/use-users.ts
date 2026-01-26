@@ -53,11 +53,12 @@ async function obtenerRoles(): Promise<Record<string, number>> {
 }
 
 // Función para mapear estados del frontend a estados de la API
-function mapStatusToAPI(status: "active" | "inactive" | "pending"): string {
+function mapStatusToAPI(status: "active" | "inactive" | "pending" | "suspended"): string {
   switch (status) {
     case "active": return "activo"
     case "inactive": return "inactivo"
     case "pending": return "activo" // pending se mapea a activo en la API
+    case "suspended": return "inactivo"
     default: return "activo"
   }
 }
@@ -191,7 +192,7 @@ export function useUsers() {
     }
   }, [loadUsers, toast])
 
-  const deleteUser = useCallback(async (userId: number) => {
+  const deleteUser = useCallback(async (userId: string | number) => {
     try {
       setLoading(true)
 

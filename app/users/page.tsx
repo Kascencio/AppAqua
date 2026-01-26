@@ -79,7 +79,7 @@ export default function UsersPage() {
   const { users, loading, loadUsers, createUser, updateUser, deleteUser } = useUsers()
   const { toast } = useToast()
 
-  const [branches, setBranches] = useState<Branch[]>([])
+  const [branches, setBranches] = useState<(Branch | { id: string | number; name: string; status?: string })[]>([])
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [searchTerm, setSearchTerm] = useState("")
 
@@ -93,10 +93,10 @@ export default function UsersPage() {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    role: "standard" as "superadmin" | "admin" | "standard" | "operator",
-    status: "active" as "active" | "inactive" | "pending",
-    branchAccess: [] as string[],
-    facilityAccess: [] as string[],
+    role: "standard" as User["role"],
+    status: "active" as User["status"],
+    branchAccess: [] as (string | number)[],
+    facilityAccess: [] as (string | number)[],
     phone: "",
     department: "",
     notes: "",
@@ -114,7 +114,7 @@ export default function UsersPage() {
   }, [])
 
   // Función auxiliar para obtener acceso a sucursales de forma segura
-  const getBranchAccess = (user: User): string[] => {
+  const getBranchAccess = (user: User): (string | number)[] => {
     return user.branchAccess && Array.isArray(user.branchAccess) ? user.branchAccess : []
   }
 
@@ -123,7 +123,7 @@ export default function UsersPage() {
     const userBranchAccess = getBranchAccess(user)
     if (userBranchAccess.length === 0) return "Sin asignar"
 
-    const assignedBranches = branches.filter((b) => userBranchAccess.includes(b.id))
+    const assignedBranches = branches.filter((b) => userBranchAccess.includes(String(b.id)) || userBranchAccess.includes(b.id))
     if (assignedBranches.length === 0) return "Empresas no encontradas"
 
     if (assignedBranches.length === 1) return assignedBranches[0].name
@@ -131,10 +131,10 @@ export default function UsersPage() {
   }
 
   // Obtener instalaciones disponibles para un usuario según sus empresas
-  const getAvailableFacilities = (branchIds: string[]): Facility[] => {
+  const getAvailableFacilities = (branchIds: (string | number)[]): Facility[] => {
     return facilities.filter((facility) => {
-      const facilityWithBranch = facility as Facility & { branchId: string }
-      return branchIds.includes(facilityWithBranch.branchId)
+      const facilityWithBranch = facility as Facility & { branchId: string | number }
+      return branchIds.includes(String(facilityWithBranch.branchId)) || branchIds.includes(facilityWithBranch.branchId)
     })
   }
 
@@ -213,10 +213,10 @@ export default function UsersPage() {
   }
 
   // Manejar cambios en el acceso a sucursales
-  const handleBranchAccessChange = (branchId: string, checked: boolean) => {
+  const handleBranchAccessChange = (branchId: string | number, checked: boolean) => {
     setFormData((prev) => {
       const currentBranchAccess = prev.branchAccess || []
-      let newBranchAccess: string[]
+      let newBranchAccess: (string | number)[]
 
       if (checked) {
         newBranchAccess = [...currentBranchAccess, branchId]
@@ -232,7 +232,7 @@ export default function UsersPage() {
   }
 
   // Manejar cambios en el acceso a instalaciones
-  const handleFacilityAccessChange = (facilityId: string, checked: boolean) => {
+  const handleFacilityAccessChange = (facilityId: string | number, checked: boolean) => {
     setFormData((prev) => {
       const currentFacilityAccess = prev.facilityAccess || []
       if (checked) {
@@ -240,7 +240,7 @@ export default function UsersPage() {
       } else {
         return {
           ...prev,
-          facilityAccess: currentFacilityAccess.filter((id: string) => id !== facilityId),
+          facilityAccess: currentFacilityAccess.filter((id) => id !== facilityId),
         }
       }
     })
@@ -486,11 +486,11 @@ export default function UsersPage() {
   }
 
   // Cambiar estado del usuario
-  const handleToggleUserStatus = async (userId: number, currentStatus: string) => {
+  const handleToggleUserStatus = async (userId: string | number, currentStatus: string) => {
     const newStatus = currentStatus === "active" ? "inactive" : "active"
 
     try {
-      const user = users.find((u) => u.id === userId)
+      const user = users.find((u) => u.id === userId || String(u.id) === String(userId))
       if (!user) return
 
       await updateUser({
@@ -512,9 +512,9 @@ export default function UsersPage() {
   }
 
   // Cambiar rol del usuario rápidamente
-  const handleQuickRoleChange = async (userId: number, newRole: string) => {
+  const handleQuickRoleChange = async (userId: string | number, newRole: string) => {
     try {
-      const user = users.find((u) => u.id === userId)
+      const user = users.find((u) => u.id === userId || String(u.id) === String(userId))
       if (!user) return
 
       await updateUser({
@@ -553,9 +553,9 @@ export default function UsersPage() {
   }
 
   // Enviar invitación por email
-  const handleSendInvitation = async (userId: number) => {
+  const handleSendInvitation = async (userId: string | number) => {
     try {
-      const user = users.find((u) => u.id === userId)
+      const user = users.find((u) => u.id === userId || String(u.id) === String(userId))
       if (!user) return
 
       // Simular envío de invitación
@@ -575,9 +575,9 @@ export default function UsersPage() {
   }
 
   // Resetear contraseña
-  const handleResetPassword = async (userId: number) => {
+  const handleResetPassword = async (userId: string | number) => {
     try {
-      const user = users.find((u) => u.id === userId)
+      const user = users.find((u) => u.id === userId || String(u.id) === String(userId))
       if (!user) return
 
       // Simular reset de contraseña
@@ -599,7 +599,7 @@ export default function UsersPage() {
   // Ver detalles del usuario
   const handleViewUserDetails = (user: User) => {
     const userBranchAccess = getBranchAccess(user)
-    const assignedBranches = branches.filter((b) => userBranchAccess.includes(b.id))
+    const assignedBranches = branches.filter((b) => userBranchAccess.includes(String(b.id)) || userBranchAccess.includes(b.id))
 
     const details = [
       `Email: ${user.email}`,
@@ -1014,10 +1014,10 @@ export default function UsersPage() {
                         <p className="text-sm text-muted-foreground p-2">No hay empresas disponibles</p>
                       ) : (
                         branches.map((branch) => (
-                          <div key={branch.id} className="flex items-center space-x-2 py-1">
+                          <div key={String(branch.id)} className="flex items-center space-x-2 py-1">
                             <Checkbox
                               id={`branch-${branch.id}`}
-                              checked={formData.branchAccess.includes(branch.id)}
+                              checked={formData.branchAccess.some(id => String(id) === String(branch.id))}
                               onCheckedChange={(checked) => handleBranchAccessChange(branch.id, checked as boolean)}
                             />
                             <Label htmlFor={`branch-${branch.id}`} className="text-sm font-normal cursor-pointer">
@@ -1050,16 +1050,16 @@ export default function UsersPage() {
                       </p>
                       <ScrollArea className="h-[100px] border rounded-md p-2">
                         {getAvailableFacilities(formData.branchAccess).map((facility) => (
-                          <div key={facility.id} className="flex items-center space-x-2 py-1">
+                          <div key={String(facility.id)} className="flex items-center space-x-2 py-1">
                             <Checkbox
                               id={`facility-${facility.id}`}
-                              checked={formData.facilityAccess.includes(facility.id)}
-                              onCheckedChange={(checked) => handleFacilityAccessChange(facility.id, checked as boolean)}
+                              checked={formData.facilityAccess.some(id => String(id) === String(facility.id))}
+                              onCheckedChange={(checked) => handleFacilityAccessChange(facility.id as string | number, checked as boolean)}
                             />
                             <Label htmlFor={`facility-${facility.id}`} className="text-sm font-normal cursor-pointer">
                               {facility.name}
                               <span className="text-muted-foreground text-xs ml-1">
-                                ({branches.find((b) => b.id === (facility as any).branchId)?.name})
+                                ({branches.find((b) => String(b.id) === String((facility as any).branchId))?.name})
                               </span>
                             </Label>
                           </div>
@@ -1270,10 +1270,10 @@ export default function UsersPage() {
                         <p className="text-sm text-muted-foreground p-2">No hay empresas disponibles</p>
                       ) : (
                         branches.map((branch) => (
-                          <div key={branch.id} className="flex items-center space-x-2 py-1">
+                          <div key={String(branch.id)} className="flex items-center space-x-2 py-1">
                             <Checkbox
                               id={`edit-branch-${branch.id}`}
-                              checked={formData.branchAccess.includes(branch.id)}
+                              checked={formData.branchAccess.some(id => String(id) === String(branch.id))}
                               onCheckedChange={(checked) => handleBranchAccessChange(branch.id, checked as boolean)}
                             />
                             <Label htmlFor={`edit-branch-${branch.id}`} className="text-sm font-normal cursor-pointer">
@@ -1306,11 +1306,11 @@ export default function UsersPage() {
                       </p>
                       <ScrollArea className="h-[100px] border rounded-md p-2">
                         {getAvailableFacilities(formData.branchAccess).map((facility) => (
-                          <div key={facility.id} className="flex items-center space-x-2 py-1">
+                          <div key={String(facility.id)} className="flex items-center space-x-2 py-1">
                             <Checkbox
                               id={`edit-facility-${facility.id}`}
-                              checked={formData.facilityAccess.includes(facility.id)}
-                              onCheckedChange={(checked) => handleFacilityAccessChange(facility.id, checked as boolean)}
+                              checked={formData.facilityAccess.some(id => String(id) === String(facility.id))}
+                              onCheckedChange={(checked) => handleFacilityAccessChange(facility.id as string | number, checked as boolean)}
                             />
                             <Label
                               htmlFor={`edit-facility-${facility.id}`}
@@ -1318,7 +1318,7 @@ export default function UsersPage() {
                             >
                               {facility.name}
                               <span className="text-muted-foreground text-xs ml-1">
-                                ({branches.find((b) => b.id === (facility as any).branchId)?.name})
+                                ({branches.find((b) => String(b.id) === String((facility as any).branchId))?.name})
                               </span>
                             </Label>
                           </div>

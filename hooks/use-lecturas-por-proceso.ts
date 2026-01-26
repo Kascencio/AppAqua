@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import type { LecturaPorProceso, ParametroMonitoreo } from "@/types"
+import type { LecturaPorProceso, ParametroMonitoreo } from "@/types/lectura"
 
 export function useLecturasPorProceso(id_proceso: number | null, fechaInicio?: string, fechaFin?: string) {
   const [lecturas, setLecturas] = useState<LecturaPorProceso[]>([])

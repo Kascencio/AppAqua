@@ -25,9 +25,14 @@ export default function SensorCardDemo() {
         {sensors.map((sensor) => (
           <SensorCard
             key={sensor.id}
-            name={sensor.name}
-            isActive={sensor.isActive}
-            onToggle={() => toggleSensor(sensor.id)}
+            title={sensor.name}
+            value={sensor.isActive ? "Activo" : "Inactivo"}
+            status={sensor.isActive ? "normal" : "offline"}
+            footer={
+              <button className="text-xs text-muted-foreground" onClick={() => toggleSensor(sensor.id)}>
+                Cambiar estado
+              </button>
+            }
           />
         ))}
       </div>

@@ -26,11 +26,31 @@ interface EditParameterDialogProps {
 }
 
 export function EditParameterDialog({ speciesId, open, onOpenChange }: EditParameterDialogProps) {
-  const { species, parameters, speciesParameters, createSpeciesParameter, deleteSpeciesParameter } = useSpecies()
+  const { species, parameters, speciesParameters, loadSpecies } = useSpecies()
   const [selectedParameter, setSelectedParameter] = useState<string>("")
   const [minValue, setMinValue] = useState<string>("")
   const [maxValue, setMaxValue] = useState<string>("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const createSpeciesParameter = async (data: { id_especie: number; id_parametro: number; Rmin: number; Rmax: number }) => {
+    const resp = await fetch("/api/especie-parametros", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!resp.ok) {
+      throw new Error("Error al crear parámetro")
+    }
+  }
+
+  const deleteSpeciesParameter = async (id_especie_parametro: number) => {
+    const resp = await fetch(`/api/especie-parametros?id=${id_especie_parametro}`, {
+      method: "DELETE",
+    })
+    if (!resp.ok) {
+      throw new Error("Error al eliminar parámetro")
+    }
+  }
 
   // Limpiar el formulario cuando cambia el ID de la especie o se abre/cierra el diálogo
   useEffect(() => {
@@ -81,6 +101,7 @@ export function EditParameterDialog({ speciesId, open, onOpenChange }: EditParam
         Rmin: min,
         Rmax: max,
       })
+      await loadSpecies()
       setSelectedParameter("")
       setMinValue("")
       setMaxValue("")
@@ -95,6 +116,7 @@ export function EditParameterDialog({ speciesId, open, onOpenChange }: EditParam
     if (confirm("¿Estás seguro de que deseas eliminar este parámetro?")) {
       try {
         await deleteSpeciesParameter(id)
+        await loadSpecies()
       } catch (error) {
         console.error("Error al eliminar el parámetro:", error)
       }

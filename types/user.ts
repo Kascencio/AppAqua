@@ -1,12 +1,12 @@
 export interface User {
-  id: number
+  id: number | string
   name: string
   email: string
-  role: "superadmin" | "admin" | "standard" | "operator"
-  status: "active" | "inactive" | "pending"
+  role: "superadmin" | "admin" | "standard" | "operator" | "manager" | "viewer"
+  status: "active" | "inactive" | "pending" | "suspended"
   avatar?: string
-  branchAccess: string[] // IDs de las empresas a las que tiene acceso
-  facilityAccess?: string[] // IDs de las instalaciones a las que tiene acceso (para operadores)
+  branchAccess: (string | number)[] // IDs de las empresas a las que tiene acceso
+  facilityAccess?: (string | number)[] // IDs de las instalaciones a las que tiene acceso (para operadores)
   lastLogin?: string
   createdAt: string
   updatedAt?: string

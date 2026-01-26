@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useState, useContext, useEffect, type ReactNode } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import type { User } from "@/types/user"
-import { api } from "@/lib/api"
+import { backendApi } from "@/lib/backend-client"
 
 interface AuthContextProps {
   user: User | null
@@ -55,6 +55,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
+
+  const setAccessTokenCookie = (token: string) => {
+    // Middleware valida auth con cookie `access_token`.
+    // No puede leer localStorage, así que debemos persistir el token también como cookie.
+    // En dev usamos cookie no-httpOnly (por JS). En prod idealmente sería httpOnly desde el backend.
+    const maxAgeSeconds = 60 * 60 * 24 * 7 // 7 días
+    document.cookie = `access_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`
+  }
+
+  const clearAccessTokenCookie = () => {
+    document.cookie = 'access_token=; Path=/; Max-Age=0; SameSite=Lax'
+  }
 
   // Verificar autenticación al cargar la app
   useEffect(() => {
@@ -114,17 +126,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const data = await api.post<any>('/login', { correo: email, password })
+      const response = await backendApi.login(email, password)
+      
+      console.log('[Auth Context] Login response received:', JSON.stringify(response, null, 2))
 
-      if (data.token && data.usuario) {
-        const mappedUser = mapUser(data.usuario)
+      // Backend devuelve: { token, usuario }
+      // O envuelto: { data: { token, usuario }, success: true }
+      const loginData = response.data || response
+      const token = loginData.token || (response as any).token
+      const usuario = loginData.usuario || (response as any).usuario
+
+      console.log('[Auth Context] Extracted token:', !!token)
+      console.log('[Auth Context] Extracted usuario:', !!usuario)
+
+      if (token && usuario) {
+        const mappedUser = mapUser(usuario)
         
-        localStorage.setItem("token", data.token)
+        console.log('[Auth Context] Setting user:', mappedUser)
+        localStorage.setItem("token", token)
         localStorage.setItem("user_data", JSON.stringify(mappedUser))
+
+        // Importante: setear cookie para que el middleware permita entrar a rutas protegidas (/, etc.)
+        setAccessTokenCookie(token)
         
         setUser(mappedUser)
+        console.log('[Auth Context] User state updated, returning success')
         return { success: true }
       } else {
+        console.error('[Auth Context] Invalid response structure:', response)
         return { success: false, error: 'Respuesta inválida del servidor' }
       }
     } catch (error: any) {
@@ -135,21 +164,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (userData: RegisterData): Promise<{ success: boolean; error?: string }> => {
     try {
-      // The user document says POST /api/usuarios for creating a user.
-      // We need to adapt the register data to the backend expected format.
       const payload = {
-        nombre_completo: userData.nombre_completo,
-        correo: userData.correo,
+        nombre: userData.nombre_completo,
+        email: userData.correo,
         password: userData.password,
-        telefono: userData.telefono,
-        id_rol: 2, // Default to standard user? Or 1 for admin? Let's assume 2.
-        estado: 'activo'
+        rol: 'viewer' as const,
       }
 
-      await api.post('/usuarios', payload)
+      await backendApi.register(payload)
       
-      // Auto login after register? Or just return success?
-      // Let's return success and let the user login.
+      // Return success and let the user login
       return { success: true }
     } catch (error: any) {
       console.error('Error durante el registro:', error)
@@ -158,10 +182,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }
 
   const logout = () => {
-    localStorage.removeItem("token")
-    localStorage.removeItem("user_data")
+    localStorage.removeItem('token')
+    localStorage.removeItem('user_data')
+    clearAccessTokenCookie()
     setUser(null)
-    router.push("/login")
+    router.push('/login')
   }
 
   const forgotPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {

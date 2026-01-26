@@ -1,102 +1,105 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Building2,
-  Fish,
-  Thermometer,
-  Droplets,
-  Activity,
-  AlertTriangle,
-  TrendingUp,
-  Users,
-  MapPin,
-} from "lucide-react"
+import { Building2, Fish, MapPin, Radio, RefreshCw, TrendingUp } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useAppContext } from "@/context/app-context"
-import { RecentAlerts } from "@/components/recent-alerts"
-import { WaterQualityOverview } from "@/components/water-quality-overview"
-import { BranchStatusChart } from "@/components/branch-status-chart"
 import { useAuth } from "@/context/auth-context"
 
 export default function DashboardPage() {
   const router = useRouter()
   const { user, isAuthenticated, isLoading } = useAuth()
-  const {
-    empresasSucursales = [],
-    instalaciones = [],
-    especies = [],
-    procesos = [],
-    alerts = [],
-    users = [],
-    isLoading: isAppLoading = false,
-  } = useAppContext() || {}
+  const app = useAppContext()
 
-  // Esperar a que el contexto de autenticación termine de cargar
   if (isLoading) {
-    return null
-  }
-
-  // Si no hay usuario autenticado, no renderizar nada (deja que el layout muestre el login)
-  if (!isAuthenticated || !user) {
-    return null
-  }
-
-  // Calcular estadísticas
-  const stats = {
-    totalEmpresas: empresasSucursales.filter((e) => e.tipo === "empresa").length,
-    totalSucursales: empresasSucursales.filter((e) => e.tipo === "sucursal").length,
-    totalInstalaciones: instalaciones.length,
-    instalacionesActivas: instalaciones.filter((i) => i.estado_operativo === "activo").length,
-    totalEspecies: especies.length,
-    procesosActivos: procesos.filter((p) => p.estado_proceso === "activo").length,
-    alertasActivas: Array.isArray(alerts) ? alerts.filter((a) => a.estado_alerta === "activa").length : 0,
-    alertasCriticas: Array.isArray(alerts)
-      ? alerts.filter((a) => a.estado_alerta === "activa" && a.tipo_alerta === "critica").length
-      : 0,
-    totalUsuarios: users.length,
-    usuariosActivos: users.filter((u) => u.status === "active").length,
-  }
-
-  if (isAppLoading) {
     return (
-      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-        <div className="flex items-center justify-between space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[...Array(8)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <div className="h-4 bg-muted animate-pulse rounded w-20"></div>
-                <div className="h-4 w-4 bg-muted animate-pulse rounded"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 bg-muted animate-pulse rounded w-16 mb-2"></div>
-                <div className="h-3 bg-muted animate-pulse rounded w-24"></div>
-              </CardContent>
-            </Card>
-          ))}
+      <div className="p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-1/4" />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-24 bg-gray-200 rounded" />
+            ))}
+          </div>
         </div>
       </div>
     )
   }
 
+  if (!isAuthenticated || !user) {
+    router.push("/login")
+    return null
+  }
+
+  const empresasSucursales = app?.empresasSucursales ?? []
+  const instalaciones = app?.instalaciones ?? []
+  const especies = app?.especies ?? []
+  const procesos = app?.procesos ?? []
+
+  const connectedStats = app?.stats
+    ? {
+        totalEmpresas: app.stats.total_empresas,
+        totalSucursales: app.stats.total_sucursales,
+        totalInstalaciones: app.stats.total_instalaciones,
+        instalacionesActivas: app.stats.instalaciones_activas,
+        totalEspecies: app.stats.total_especies,
+        procesosActivos: app.stats.procesos_activos,
+        sensoresInstalados: app.stats.sensores_instalados,
+      }
+    : {
+        totalEmpresas: empresasSucursales.filter((e) => e.tipo === "empresa").length,
+        totalSucursales: empresasSucursales.filter((e) => e.tipo === "sucursal").length,
+        totalInstalaciones: instalaciones.length,
+        instalacionesActivas: instalaciones.filter((i) => i.estado_operativo === "activo").length,
+        totalEspecies: especies.length,
+        procesosActivos: procesos.filter((p) => p.estado_proceso === "activo").length,
+        sensoresInstalados: app?.sensoresInstalados?.length ?? 0,
+      }
+
+  const loadingApp = app?.isLoading ?? false
+  const error = app?.error
+  const refreshData = app?.refreshData
+
   return (
     <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Inicio</h2>
+          <p className="text-sm text-muted-foreground">Solo se muestra lo que está conectado al backend.</p>
+        </div>
         <div className="flex items-center space-x-2">
-          <Button onClick={() => router.push("/map")}>
+          <Button variant="outline" onClick={() => refreshData?.()} disabled={!refreshData || loadingApp}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Actualizar
+          </Button>
+          <Button onClick={() => router.push("/map")}
+          >
             <MapPin className="mr-2 h-4 w-4" />
-            Ver Mapa
+            Mapa
+          </Button>
+          <Button variant="secondary" onClick={() => router.push("/sensors")}
+          >
+            <Radio className="mr-2 h-4 w-4" />
+            Sensores
           </Button>
         </div>
       </div>
 
-      {/* Estadísticas principales */}
+      {error && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">No se pudo cargar información</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => refreshData?.()} disabled={!refreshData || loadingApp}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -104,8 +107,8 @@ export default function DashboardPage() {
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalEmpresas}</div>
-            <p className="text-xs text-muted-foreground">{stats.totalSucursales} sucursales</p>
+            <div className="text-2xl font-bold">{connectedStats.totalEmpresas}</div>
+            <p className="text-xs text-muted-foreground">{connectedStats.totalSucursales} sucursales</p>
           </CardContent>
         </Card>
 
@@ -115,8 +118,8 @@ export default function DashboardPage() {
             <Fish className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalInstalaciones}</div>
-            <p className="text-xs text-muted-foreground">{stats.instalacionesActivas} activas</p>
+            <div className="text-2xl font-bold">{connectedStats.totalInstalaciones}</div>
+            <p className="text-xs text-muted-foreground">{connectedStats.instalacionesActivas} activas</p>
           </CardContent>
         </Card>
 
@@ -126,154 +129,51 @@ export default function DashboardPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.procesosActivos}</div>
-            <p className="text-xs text-muted-foreground">{stats.totalEspecies} especies monitoreadas</p>
+            <div className="text-2xl font-bold">{connectedStats.procesosActivos}</div>
+            <p className="text-xs text-muted-foreground">{connectedStats.totalEspecies} especies</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Alertas</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Sensores Instalados</CardTitle>
+            <Radio className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold flex items-center gap-2">
-              {stats.alertasActivas}
-              {stats.alertasCriticas > 0 && (
-                <Badge variant="destructive" className="text-xs">
-                  {stats.alertasCriticas} críticas
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">Alertas activas</p>
+            <div className="text-2xl font-bold">{connectedStats.sensoresInstalados}</div>
+            <p className="text-xs text-muted-foreground">Lecturas y estado en /sensors</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Estadísticas secundarias */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Usuarios</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalUsuarios}</div>
-            <p className="text-xs text-muted-foreground">{stats.usuariosActivos} activos</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Temperatura Promedio</CardTitle>
-            <Thermometer className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">27.5°C</div>
-            <p className="text-xs text-muted-foreground">Rango óptimo</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">pH Promedio</CardTitle>
-            <Droplets className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">7.2</div>
-            <p className="text-xs text-muted-foreground">Dentro del rango</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Oxígeno Disuelto</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">6.8 mg/L</div>
-            <p className="text-xs text-muted-foreground">Nivel óptimo</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Sección principal con gráficos y alertas */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <div className="col-span-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Estado de Instalaciones</CardTitle>
-              <CardDescription>Distribución del estado operativo de las instalaciones</CardDescription>
-            </CardHeader>
-            <CardContent className="pl-2">
-              <BranchStatusChart />
-            </CardContent>
-          </Card>
-        </div>
-        <div className="col-span-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Alertas Recientes</CardTitle>
-              <CardDescription>Últimas alertas del sistema de monitoreo</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <RecentAlerts />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Calidad del agua */}
-      <div className="grid gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Resumen de Calidad del Agua</CardTitle>
-            <CardDescription>Parámetros principales de todas las instalaciones activas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <WaterQualityOverview />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Acciones rápidas */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/monitoreo")}>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/instalaciones")}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Monitoreo en Tiempo Real</CardTitle>
+            <CardTitle className="text-base">Instalaciones</CardTitle>
+            <CardDescription>Listado conectado al backend</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Ver lecturas actuales de todos los sensores</p>
+            <p className="text-sm text-muted-foreground">Ver y administrar instalaciones.</p>
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/analytics")}>
+        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/empresas")}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Análisis y Reportes</CardTitle>
+            <CardTitle className="text-base">Empresas / Sucursales</CardTitle>
+            <CardDescription>Estructura organizacional</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Generar reportes y análisis históricos</p>
+            <p className="text-sm text-muted-foreground">Ver empresas y sucursales.</p>
           </CardContent>
         </Card>
 
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => router.push("/procesos")}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Gestión de Procesos</CardTitle>
+            <CardTitle className="text-base">Procesos</CardTitle>
+            <CardDescription>Listado y seguimiento</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">Administrar procesos de cultivo activos</p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="cursor-pointer hover:shadow-md transition-shadow"
-          onClick={() => router.push("/notifications")}
-        >
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Centro de Alertas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Gestionar todas las alertas del sistema</p>
+            <p className="text-sm text-muted-foreground">Entrar al módulo de procesos.</p>
           </CardContent>
         </Card>
       </div>

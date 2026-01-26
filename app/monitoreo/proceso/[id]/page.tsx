@@ -1,6 +1,7 @@
 "use client"
 
 import { api } from "@/lib/api"
+import { backendApi } from "@/lib/backend-client"
 import { useState, useEffect, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -95,8 +96,30 @@ export default function ProcesoDetailPage() {
             const catalogoSensores = await api.get<CatalogoSensor[]>("/catalogo-sensores")
             const sensorInfo = catalogoSensores.find(c => c.id_sensor === sensor.id_sensor)
             
-            // Get recent readings (mocked for now as we don't have endpoint yet, or use empty)
-            const lecturas: Lectura[] = [] 
+            // Get recent readings from backend API
+            let lecturas: Lectura[] = []
+            try {
+              const now = new Date()
+              const desde = new Date(now.getTime() - 24 * 60 * 60 * 1000) // últimas 24 horas
+              const resp = await backendApi.getLecturas({
+                sensorInstaladoId: sensor.id_sensor_instalado,
+                page: 1,
+                limit: 100,
+                desde: desde.toISOString(),
+                hasta: now.toISOString(),
+              })
+              const payload: any = resp
+              const rows: any[] = Array.isArray(payload) ? payload : (payload?.data || [])
+              lecturas = rows.map((r: any) => ({
+                id_lectura: r.id_lectura,
+                id_sensor_instalado: r.id_sensor_instalado,
+                valor: Number(r.valor),
+                fecha: r.fecha || r.tomada_en?.split('T')[0] || '',
+                hora: r.hora || r.tomada_en?.split('T')[1]?.substring(0, 8) || '',
+              }))
+            } catch (err) {
+              console.warn(`Error fetching lecturas for sensor ${sensor.id_sensor_instalado}:`, err)
+            }
 
             return {
                 ...sensor,

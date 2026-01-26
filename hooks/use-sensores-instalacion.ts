@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { backendApi } from "@/lib/backend-client"
 
 interface Sensor {
   id_sensor: number
@@ -27,14 +28,40 @@ export function useSensoresDeInstalacion(id_instalacion: number | string | undef
     setLoading(true)
     setError(null)
     const instalacionId = typeof id_instalacion === "string" ? Number.parseInt(id_instalacion, 10) : id_instalacion
-    fetch(`/api/sensores?instalacion=${instalacionId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Error al cargar sensores")
-        return res.json()
-      })
-      .then((data) => setSensores(data))
-      .catch(() => setError("Error al cargar sensores"))
-      .finally(() => setLoading(false))
+    ;(async () => {
+      try {
+        const res = await backendApi.getSensoresInstalados({
+          id_instalacion: instalacionId,
+          page: 1,
+          limit: 1000,
+        })
+
+        const payload: any = res
+        const items = Array.isArray(payload) ? payload : (payload.data || [])
+
+        const mapped: Sensor[] = items.map((s: any) => {
+          const activo = (s as any).activo !== false
+          return {
+            id_sensor: Number(s.id_sensor_instalado ?? s.id_sensor ?? 0),
+            nombre_sensor: (s.tipo_medida || s.descripcion || `Sensor ${s.id_sensor_instalado}`) as string,
+            tipo_sensor: (s.tipo_medida || s.tipo_sensor || "") as string,
+            ubicacion: s.ubicacion || undefined,
+            estado: activo ? "activo" : "inactivo",
+            id_instalacion: Number(s.id_instalacion ?? instalacionId),
+            fecha_instalacion: (s.created_at || s.fecha_instalada || "") as string,
+            modelo: s.modelo || undefined,
+            marca: s.marca || undefined,
+          }
+        })
+
+        setSensores(mapped)
+      } catch {
+        setError("Error al cargar sensores")
+        setSensores([])
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [id_instalacion])
 
   return {

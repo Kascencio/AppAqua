@@ -55,8 +55,8 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
 
   // Calcular estado y progreso
   const estado = calcularEstadoProceso(fecha_inicio, fecha_final, dias_extension)
-  const progreso = calcularProgresoProceso(fecha_inicio, fecha_final, dias_extension)
-  const { dias_totales, dias_transcurridos } = calcularDiasProceso(fecha_inicio, fecha_final, dias_extension)
+  const progreso = calcularProgresoProceso(fecha_inicio, fecha_final)
+  const { diasTotales, diasTranscurridos } = calcularDiasProceso(fecha_inicio, fecha_final, dias_extension)
 
   // Determinar color del estado
   const getEstadoColor = () => {
@@ -67,8 +67,6 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
         return "bg-blue-500"
       case "extendido":
         return "bg-purple-500"
-      case "cancelado":
-        return "bg-red-500"
       default:
         return "bg-gray-500"
     }
@@ -194,7 +192,7 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
               <div className="flex items-center gap-2">
                 <ClockIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm">
-                  {dias_transcurridos} de {dias_totales} días
+                  {diasTranscurridos} de {diasTotales} días
                 </span>
               </div>
               <span className="text-sm font-medium">{progreso}%</span>

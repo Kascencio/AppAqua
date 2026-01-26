@@ -175,8 +175,8 @@ export default function AddSensorDialog({
 
     // Validate branch-facility relationship
     if (branchId && facilityId) {
-      const selectedBranch = branches.find((b) => b.id === branchId)
-      const facilityExists = selectedBranch?.facilities.some((f) => f.id === facilityId)
+      const selectedBranch = branches.find((b) => String(b.id) === branchId)
+      const facilityExists = (selectedBranch?.facilities || []).some((f) => String(f.id) === facilityId)
       if (!facilityExists) {
         newErrors.facilityId = "La instalación seleccionada no pertenece a la sucursal"
       }
@@ -237,7 +237,7 @@ export default function AddSensorDialog({
     }
   }
 
-  const selectedBranch = branches.find((b) => b.id === branchId)
+  const selectedBranch = branches.find((b) => String(b.id) === branchId)
   const selectedFacility = facilities.find((f) => f.id === facilityId)
 
   return (
@@ -308,17 +308,21 @@ export default function AddSensorDialog({
                   <SelectValue placeholder="Seleccionar sucursal" />
                 </SelectTrigger>
                 <SelectContent>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name} - {branch.location}
-                    </SelectItem>
-                  ))}
+                  {branches.map((branch) => {
+                    const loc = branch.location
+                    const locStr = typeof loc === "string" ? loc : loc ? `${loc.lat}, ${loc.lng}` : ""
+                    return (
+                      <SelectItem key={branch.id} value={String(branch.id)}>
+                        {branch.name} - {locStr}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
               {errors.branchId && <p className="text-sm text-red-500">{errors.branchId}</p>}
               {selectedBranch && (
                 <p className="text-xs text-green-600">
-                  ✓ Sucursal seleccionada: {selectedBranch.name} ({selectedBranch.facilities.length} instalaciones
+                  ✓ Sucursal seleccionada: {selectedBranch.name} ({(selectedBranch.facilities || []).length} instalaciones
                   disponibles)
                 </p>
               )}

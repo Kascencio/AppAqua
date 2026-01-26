@@ -58,10 +58,18 @@ export default function SucursalesPage() {
   }
 
   const handleDeleteBranch = () => {
-    if (selectedBranch) {
-      deleteBranch(selectedBranch.id_empresa_sucursal)
-      setSelectedBranch(null)
-    }
+    if (!selectedBranch) return
+
+    const idToDelete = selectedBranch.id_empresa_sucursal
+    setSelectedBranch(null)
+    setIsDeleteDialogOpen(false)
+
+    void (async () => {
+      try {
+        await deleteBranch(idToDelete)
+      } catch {
+      }
+    })()
   }
 
   const openEditDialog = (branch: EmpresaSucursal) => {
