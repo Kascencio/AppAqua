@@ -76,7 +76,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Redirigir según el estado de autenticación
   useEffect(() => {
     if (!isLoading) {
-      const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password", "/temp"]
+      const publicPaths = ["/login", "/register", "/forgot-password", "/reset-password"]
       if (!user && !publicPaths.includes(pathname)) {
         router.push("/login")
       } else if (user && (pathname === "/login" || pathname === "/register")) {

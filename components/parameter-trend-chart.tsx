@@ -38,20 +38,65 @@ function normalizeTs(iso: string): string {
   return isNaN(d.getTime()) ? iso : d.toISOString()
 }
 
-function detectType(sensor: any): string {
-  const t = String(sensor?.type || '').toLowerCase()
-  const u = String(sensor?.unit || '').toLowerCase()
-  if (t.includes('ph')) return 'ph'
-  if (t.includes('temp')) return 'temperature'
-  if (t.includes('ox') || t.includes('oxígeno') || t.includes('oxygen')) return 'oxygen'
-  if (u.includes('ph')) return 'ph'
-  if (u.includes('°c') || u.includes('c')) return 'temperature'
-  if (u.includes('mg/l') && String(sensor?.name || '').toLowerCase().includes('ox')) return 'oxygen'
-  const n = String(sensor?.name || sensor?.descripcion || '').toLowerCase()
-  if (n.includes('ph')) return 'ph'
-  if (n.includes('temp')) return 'temperature'
-  if (n.includes('ox') || n.includes('oxígeno') || n.includes('oxygen')) return 'oxygen'
-  return 'other'
+function normalizeKey(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function getTipoMedidaFromSensor(sensor: any): string {
+  // Preferimos el tipo real de BD si existe.
+  const raw =
+    sensor?.tipoMedida ??
+    sensor?.tipo_medida ??
+    sensor?.catalogo_sensores?.tipo_medida ??
+    sensor?.catalogo?.tipo_medida ??
+    sensor?.type
+
+  return String(raw || "")
+}
+
+function detectCanonicalType(sensor: any): string {
+  const raw = getTipoMedidaFromSensor(sensor)
+  const t = normalizeKey(raw)
+  const u = String(sensor?.unit || "").toLowerCase()
+  const n = String(sensor?.name || sensor?.descripcion || "").toLowerCase()
+
+  if (t.includes("ph") || t.includes("potencial") || t.includes("hidrogeno") || t.includes("hidrógeno")) return "ph"
+  if (t.includes("temp") || t.includes("temperatura")) return "temperature"
+  if (t.includes("ox") || t.includes("oxígeno") || t.includes("oxigeno") || t.includes("oxygen") || t.includes("o2")) return "oxygen"
+  if (t.includes("sal") || t.includes("salinidad")) return "salinity"
+  if (t.includes("turb") || t.includes("turbidez")) return "turbidity"
+  if (t.includes("nitrat") || t.includes("nitrato")) return "nitrates"
+  if (t.includes("amon") || t.includes("ammo") || t.includes("amoniaco") || t.includes("amoníaco")) return "ammonia"
+  if (t.includes("baro") || t.includes("presión") || t.includes("presion")) return "barometric"
+
+  if (u.includes("ph")) return "ph"
+  if (u.includes("°c") || u === "c" || u.endsWith(" c")) return "temperature"
+  if (u.includes("mg/l") && (n.includes("ox") || n.includes("o2") || t.includes("ox"))) return "oxygen"
+  if (u.includes("ppt")) return "salinity"
+  if (u.includes("ntu")) return "turbidity"
+  if (u.includes("hpa")) return "barometric"
+
+  // fallback por nombre
+  if (n.includes("ph") || n.includes("potencial") || n.includes("hidrogeno") || n.includes("hidrógeno")) return "ph"
+  if (n.includes("temp") || n.includes("temperatura")) return "temperature"
+  if (n.includes("ox") || n.includes("oxígeno") || n.includes("oxigeno") || n.includes("oxygen") || n.includes("o2")) return "oxygen"
+  if (n.includes("sal") || n.includes("salinidad")) return "salinity"
+  if (n.includes("turb") || n.includes("turbidez")) return "turbidity"
+  if (n.includes("nitrat") || n.includes("nitrato")) return "nitrates"
+  if (n.includes("amon") || n.includes("ammo") || n.includes("amoniaco") || n.includes("amoníaco")) return "ammonia"
+  if (n.includes("baro") || n.includes("presión") || n.includes("presion")) return "barometric"
+
+  return "other"
+}
+
+function humanizeTipoMedida(raw: string): string {
+  const cleaned = raw.trim()
+  if (!cleaned) return "Otro"
+  // Capitalización simple, conservando siglas.
+  return cleaned
+    .split(/\s+/)
+    .map((w) => (w.length <= 3 && w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+    .join(" ")
 }
 
 function pickMeta(param: ParamKey, sensors: any[]) {
@@ -79,12 +124,13 @@ function pickMeta(param: ParamKey, sensors: any[]) {
     other: "Otro",
   }
 
-  const match = sensors.find((s) => detectType(s) === param)
-  const unit = match?.unit || (param === "temperature" ? "°C" : param === "oxygen" ? "mg/L" : "")
+  const match = sensors.find((s) => normalizeKey(getTipoMedidaFromSensor(s)) === normalizeKey(param))
+  const canonical = match ? detectCanonicalType(match) : "other"
+  const unit = match?.unit || (canonical === "temperature" ? "°C" : canonical === "oxygen" ? "mg/L" : "")
   return {
-    label: labelMap[param] || labelMap.other,
+    label: labelMap[canonical] || humanizeTipoMedida(param),
     unit,
-    color: colorMap[param] || colorMap.other,
+    color: colorMap[canonical] || colorMap.other,
   }
 }
 
@@ -119,12 +165,18 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
   const sourceSensors = useMemo(() => (sensors && sensors.length ? sensors : hookSensors), [sensors, hookSensors])
 
   const availableTypes = useMemo(() => {
-    const set = new Set<string>()
+    const map = new Map<string, string>()
     sourceSensors.forEach((s: any) => {
-      const t = detectType(s)
-      if (t) set.add(t)
+      const raw = getTipoMedidaFromSensor(s)
+      const key = normalizeKey(raw)
+      if (!key) return
+      // conservar el primer valor "bonito" para mostrar
+      if (!map.has(key)) map.set(key, raw)
     })
-    return Array.from(set)
+    // orden estable por label
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "es"))
+      .map(([, raw]) => raw)
   }, [sourceSensors])
 
   useEffect(() => {
@@ -134,7 +186,8 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
   }, [availableTypes, parameter])
 
   const sensorsToQuery = useMemo(() => {
-    return (sourceSensors || []).filter((s: any) => detectType(s) === parameter)
+    const key = normalizeKey(parameter)
+    return (sourceSensors || []).filter((s: any) => normalizeKey(getTipoMedidaFromSensor(s)) === key)
   }, [sourceSensors, parameter])
 
   useEffect(() => {

@@ -143,7 +143,7 @@ JWT_SECRET=4sPaIl6kO5sFSElo+MpY6nITSu2Yeux1AStpEOyxjq4dxWuRdONuY3Mk01/0KRD4
 ```
 
 ### B. Cliente API Centralizado
-**Archivo**: `/lib/api-client.ts` o `/lib/external-api-client.ts`
+**Archivo**: `/lib/backend-client.ts`
 
 Necesita:
 - Manejo de autenticación (JWT en headers)
@@ -552,4 +552,3 @@ El schema del backend ya está alineado con la base de datos actual. Los cambios
 - [Schema Prisma del Backend](../Servicio/backend/prisma/schema.prisma)
 - [Quick Start del Backend](../Servicio/backend/QUICKSTART.md)
 - [WebSocket RFC del Proyecto](./BACKEND-INTEGRATION-REQUIREMENTS.md)
-

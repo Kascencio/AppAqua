@@ -20,15 +20,11 @@ import { useToast } from "@/hooks/use-toast"
 import { useBranches } from "@/hooks/use-branches"
 import type { Instalacion } from "@/types/instalacion"
 
-// Local form type without index signature
+// Local form type - aligned with real BD schema
 interface InstalacionFormData {
   id_empresa_sucursal: number
   nombre_instalacion: string
-  fecha_instalacion: string
-  estado_operativo: "activo" | "inactivo"
   descripcion: string
-  tipo_uso: "acuicultura" | "tratamiento" | "otros"
-  id_proceso: number
 }
 
 interface AddInstalacionDialogProps {
@@ -42,27 +38,19 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
   const { toast } = useToast()
   const { branches, loading: loadingBranches } = useBranches()
 
-  // Formulario basado en estructura REAL de BD
+  // Formulario basado en estructura REAL de BD (solo campos existentes)
   const [formData, setFormData] = useState<InstalacionFormData>({
     id_empresa_sucursal: 1,
     nombre_instalacion: "",
-    fecha_instalacion: new Date().toISOString().split("T")[0],
-    estado_operativo: "activo",
     descripcion: "",
-    tipo_uso: "acuicultura",
-    id_proceso: 1,
   })
 
   const resetForm = () => {
     setFormData({
       id_empresa_sucursal: 1,
       nombre_instalacion: "",
-      fecha_instalacion: new Date().toISOString().split("T")[0],
-      estado_operativo: "activo",
       descripcion: "",
-      tipo_uso: "acuicultura",
-      id_proceso: 1,
-    } as InstalacionFormData)
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -172,78 +160,13 @@ export function AddInstalacionDialog({ open, onOpenChange, onAddInstalacion }: A
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="fecha_instalacion">Fecha de Instalación *</Label>
-              <Input
-                id="fecha_instalacion"
-                type="date"
-                value={formData.fecha_instalacion}
-                onChange={(e) => handleInputChange("fecha_instalacion", e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="tipo_uso">Tipo de Uso *</Label>
-              <Select
-                value={formData.tipo_uso}
-                onValueChange={(value) =>
-                  handleInputChange("tipo_uso", value as "acuicultura" | "tratamiento" | "otros")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar tipo de uso" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="acuicultura">Acuicultura</SelectItem>
-                  <SelectItem value="tratamiento">Tratamiento</SelectItem>
-                  <SelectItem value="otros">Otros</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="estado_operativo">Estado Operativo *</Label>
-              <Select
-                value={formData.estado_operativo}
-                onValueChange={(value) => handleInputChange("estado_operativo", value as "activo" | "inactivo")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar estado" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="activo">Activo</SelectItem>
-                  <SelectItem value="inactivo">Inactivo</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="id_proceso">Proceso *</Label>
-              <Select
-                value={formData.id_proceso.toString()}
-                onValueChange={(value) => handleInputChange("id_proceso", Number(value))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar proceso" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Proceso Cultivo Tilapia</SelectItem>
-                  <SelectItem value="2">Proceso Alevinaje</SelectItem>
-                  <SelectItem value="3">Proceso Tratamiento Agua</SelectItem>
-                  <SelectItem value="4">Proceso Multipropósito</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="descripcion">Descripción *</Label>
+              <Label htmlFor="descripcion">Descripción</Label>
               <Textarea
                 id="descripcion"
                 value={formData.descripcion}
                 onChange={(e) => handleInputChange("descripcion", e.target.value)}
-                placeholder="Descripción detallada de la instalación..."
+                placeholder="Descripción de la instalación..."
                 rows={3}
-                required
               />
             </div>
           </div>

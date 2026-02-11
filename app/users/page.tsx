@@ -76,7 +76,7 @@ export default function UsersPage() {
     )
   }
 
-  const { users, loading, loadUsers, createUser, updateUser, deleteUser } = useUsers()
+  const { users, loading, loadUsers, createUser, updateUser, deleteUser, sendPasswordReset } = useUsers()
   const { toast } = useToast()
 
   const [branches, setBranches] = useState<(Branch | { id: string | number; name: string; status?: string })[]>([])
@@ -580,13 +580,8 @@ export default function UsersPage() {
       const user = users.find((u) => u.id === userId || String(u.id) === String(userId))
       if (!user) return
 
-      // Simular reset de contraseña
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      toast({
-        title: "Contraseña restablecida",
-        description: `Se ha enviado un enlace de restablecimiento a ${user.email}`,
-      })
+      // Usar el hook para enviar email de reset real
+      await sendPasswordReset(user)
     } catch (error) {
       toast({
         variant: "destructive",

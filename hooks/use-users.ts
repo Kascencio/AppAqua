@@ -52,6 +52,30 @@ async function obtenerRoles(): Promise<Record<string, number>> {
   }
 }
 
+// Generar contraseña segura aleatoria
+function generateSecurePassword(length: number = 12): string {
+  const lowercase = "abcdefghijklmnopqrstuvwxyz"
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  const numbers = "0123456789"
+  const symbols = "!@#$%&*"
+  const allChars = lowercase + uppercase + numbers + symbols
+
+  // Asegurar al menos un carácter de cada tipo
+  let password = ""
+  password += lowercase.charAt(Math.floor(Math.random() * lowercase.length))
+  password += uppercase.charAt(Math.floor(Math.random() * uppercase.length))
+  password += numbers.charAt(Math.floor(Math.random() * numbers.length))
+  password += symbols.charAt(Math.floor(Math.random() * symbols.length))
+
+  // Completar el resto con caracteres aleatorios
+  for (let i = password.length; i < length; i++) {
+    password += allChars.charAt(Math.floor(Math.random() * allChars.length))
+  }
+
+  // Mezclar los caracteres
+  return password.split("").sort(() => Math.random() - 0.5).join("")
+}
+
 // Función para mapear estados del frontend a estados de la API
 function mapStatusToAPI(status: "active" | "inactive" | "pending" | "suspended"): string {
   switch (status) {
@@ -121,21 +145,44 @@ export function useUsers() {
       const roleMap = await obtenerRoles()
       const roleId = roleMap[userData.role] || (userData.role === 'admin' ? 2 : userData.role === 'superadmin' ? 1 : 3)
 
+      // Generar contraseña temporal segura
+      const tempPassword = generateSecurePassword(12)
+
       // Convertir datos del tipo User a formato de API
       const apiData = {
         nombre_completo: userData.name,
         correo: userData.email,
         telefono: userData.phone || null,
-        password: "password123", // Contraseña temporal, debería ser generada o enviada por email
+        password: tempPassword,
         estado: mapStatusToAPI(userData.status),
         id_rol: roleId,
       }
 
       await api.post("/usuarios", apiData)
 
+      // Intentar enviar email de bienvenida con link de reset
+      try {
+        const baseUrl = typeof window !== "undefined" ? window.location.origin : ""
+        const resetToken = btoa(JSON.stringify({ email: userData.email, exp: Date.now() + 86400000 })) // 24h
+        const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
+        
+        await fetch("/api/send-reset-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: userData.email,
+            resetUrl,
+            userName: userData.name,
+          }),
+        })
+      } catch {
+        // Si falla el envío de email, no es crítico
+        console.warn("No se pudo enviar email de bienvenida")
+      }
+
       toast({
         title: "Éxito",
-        description: "Usuario creado correctamente",
+        description: `Usuario creado correctamente. Se ha enviado un email a ${userData.email} para establecer su contraseña.`,
       })
 
       await loadUsers()
@@ -218,6 +265,46 @@ export function useUsers() {
     }
   }, [loadUsers, toast])
 
+  const sendPasswordReset = useCallback(async (user: User) => {
+    try {
+      setLoading(true)
+
+      const baseUrl = typeof window !== "undefined" ? window.location.origin : ""
+      const resetToken = btoa(JSON.stringify({ email: user.email, exp: Date.now() + 86400000 })) // 24h
+      const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
+
+      const response = await fetch("/api/send-reset-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          resetUrl,
+          userName: user.name,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Error al enviar email")
+      }
+
+      toast({
+        title: "Éxito",
+        description: `Se ha enviado un email de restablecimiento a ${user.email}`,
+      })
+      return true
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Error al enviar email de restablecimiento"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
   useEffect(() => {
     loadUsers()
   }, [loadUsers])
@@ -230,5 +317,6 @@ export function useUsers() {
     createUser,
     updateUser,
     deleteUser,
+    sendPasswordReset,
   }
 }

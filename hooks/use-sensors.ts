@@ -8,6 +8,8 @@ export interface SensorCompleto extends SensorInstalado {
   id?: string | number // Alias for id_sensor_instalado
   name: string
   type: string
+  /** Tipo de medida tal como viene desde la BD/API (source-of-truth). */
+  tipoMedida?: string
   unit: string
   modelo?: string
   marca?: string
@@ -117,9 +119,14 @@ export function useSensors() {
       const detectType = (name: string, rawType?: string, unit?: string): string => {
         const t = String(rawType || '').toLowerCase()
         const u = String(unit || '').toLowerCase()
-        if (t.includes('ph')) return 'ph'
-        if (t.includes('temp')) return 'temperature'
-        if (t.includes('ox') || t.includes('oxígeno') || t.includes('oxygen')) return 'oxygen'
+        if (t.includes('ph') || t.includes('potencial') || t.includes('hidrogeno') || t.includes('hidrógeno')) return 'ph'
+        if (t.includes('temp') || t.includes('temperatura')) return 'temperature'
+        if (t.includes('ox') || t.includes('oxígeno') || t.includes('oxigeno') || t.includes('oxygen') || t.includes('o2')) return 'oxygen'
+        if (t.includes('sal') || t.includes('salinidad')) return 'salinity'
+        if (t.includes('turb') || t.includes('turbidez')) return 'turbidity'
+        if (t.includes('nitrat') || t.includes('nitrato')) return 'nitrates'
+        if (t.includes('amon') || t.includes('ammo') || t.includes('amoniaco') || t.includes('amoníaco')) return 'ammonia'
+        if (t.includes('baro') || t.includes('presión') || t.includes('presion')) return 'barometric'
         if (t.includes('sal')) return 'salinity'
         if (t.includes('turb')) return 'turbidity'
         if (t.includes('nitrat')) return 'nitrates'
@@ -132,14 +139,14 @@ export function useSensors() {
         if (u.includes('ntu')) return 'turbidity'
         if (u.includes('hpa')) return 'barometric'
         const n = (name || '').toLowerCase()
-        if (n.includes('ph')) return 'ph'
-        if (n.includes('temp')) return 'temperature'
-        if (n.includes('ox') || n.includes('oxígeno') || n.includes('oxygen')) return 'oxygen'
-        if (n.includes('sal')) return 'salinity'
-        if (n.includes('turb')) return 'turbidity'
-        if (n.includes('nitrat')) return 'nitrates'
-        if (n.includes('amon') || n.includes('ammo')) return 'ammonia'
-        if (n.includes('baro') || n.includes('presión')) return 'barometric'
+        if (n.includes('ph') || n.includes('potencial') || n.includes('hidrogeno') || n.includes('hidrógeno')) return 'ph'
+        if (n.includes('temp') || n.includes('temperatura')) return 'temperature'
+        if (n.includes('ox') || n.includes('oxígeno') || n.includes('oxigeno') || n.includes('oxygen') || n.includes('o2')) return 'oxygen'
+        if (n.includes('sal') || n.includes('salinidad')) return 'salinity'
+        if (n.includes('turb') || n.includes('turbidez')) return 'turbidity'
+        if (n.includes('nitrat') || n.includes('nitrato')) return 'nitrates'
+        if (n.includes('amon') || n.includes('ammo') || n.includes('amoniaco') || n.includes('amoníaco')) return 'ammonia'
+        if (n.includes('baro') || n.includes('presión') || n.includes('presion')) return 'barometric'
         return 'other'
       }
 
@@ -178,6 +185,7 @@ export function useSensors() {
           descripcion: String((s as any).descripcion ?? catalogo?.descripcion ?? ''),
           name: sensorName,
           type: detectType(sensorName, rawType, unit),
+          tipoMedida: rawType || undefined,
           unit,
           modelo: catalogo?.modelo ?? undefined,
           marca: catalogo?.marca ?? undefined,

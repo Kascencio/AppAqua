@@ -26,8 +26,7 @@ const authRoutes = [
 
 // Rutas públicas (no requieren autenticación)
 const publicRoutes = [
-  '/reset-password',
-  '/temp'
+  '/reset-password'
 ]
 
 export function middleware(request: NextRequest) {

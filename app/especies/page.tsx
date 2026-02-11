@@ -11,7 +11,7 @@ import { AddSpeciesDialog } from "@/components/add-species-dialog"
 import { useState } from "react"
 
 export default function EspeciesPage() {
-  const { species, parameters, speciesParameters, loadSpecies, loading } = useSpecies()
+  const { species, parameters, speciesParameters, loadSpecies, loading, deleteSpecies } = useSpecies()
   const [showAddDialog, setShowAddDialog] = useState(false)
 
   // Cargar datos al montar el componente
@@ -93,7 +93,14 @@ export default function EspeciesPage() {
       </div>
 
       {/* Tabla de especies */}
-      <SpeciesTable onRefresh={loadSpecies} />
+      <SpeciesTable
+        species={species}
+        parameters={parameters}
+        speciesParameters={speciesParameters}
+        loading={loading}
+        onDelete={deleteSpecies}
+        onRefresh={loadSpecies}
+      />
 
       {/* Dialog para agregar especie */}
       <AddSpeciesDialog open={showAddDialog} onOpenChange={setShowAddDialog} onSuccess={loadSpecies} />

@@ -208,13 +208,14 @@ curl "http://195.35.11.179:3300/api/lecturas?sensorInstaladoId=1&page=1&limit=5"
 curl "http://195.35.11.179:3300/health"
 ```
 
-### Página de pruebas interactiva:
+### Pruebas automatizadas recomendadas:
 ```bash
-# 1. Iniciar el servidor de desarrollo
+# 1. Iniciar el servidor de desarrollo (si aplica)
 npm run dev
 
-# 2. Navegar a:
-http://localhost:3000/test-api
+# 2. Ejecutar scripts de verificación
+bash scripts/test-api.sh
+npx tsx scripts/test-api.ts
 ```
 
 ---

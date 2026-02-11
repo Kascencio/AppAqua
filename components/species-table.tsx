@@ -18,18 +18,21 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Pencil, Trash2, Search } from "lucide-react"
-import { useSpecies } from "@/hooks/use-species"
 import { EditSpeciesDialog } from "./edit-species-dialog"
 import { ParameterRangeDisplay } from "./parameter-range-display"
 import type { Especie } from "@/types/especie"
 import { toast } from "sonner"
 
 interface SpeciesTableProps {
+  species: Especie[]
+  parameters: any[]
+  speciesParameters: any[]
+  loading: boolean
+  onDelete: (id: number) => Promise<void>
   onRefresh: () => Promise<void>
 }
 
-export function SpeciesTable({ onRefresh }: SpeciesTableProps) {
-  const { species, parameters, speciesParameters, deleteSpecies, loading } = useSpecies()
+export function SpeciesTable({ species, parameters, speciesParameters, loading, onDelete, onRefresh }: SpeciesTableProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [editingSpecies, setEditingSpecies] = useState<Especie | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -54,7 +57,7 @@ export function SpeciesTable({ onRefresh }: SpeciesTableProps) {
   const confirmDelete = async (id: number) => {
     try {
       setDeletingId(id)
-      await deleteSpecies(id)
+      await onDelete(id)
       await onRefresh()
       toast.success("Especie eliminada correctamente")
     } catch (error) {

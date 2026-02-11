@@ -2,8 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { BarChart3, TrendingUp, Download, Filter, FileText, Activity, Thermometer, Droplets, ArrowDown, ArrowUp, Clock, Wifi, WifiOff, Calendar } from "lucide-react"
+import { BarChart3, TrendingUp, Download, Filter, Activity, Thermometer, Droplets, ArrowDown, ArrowUp, Clock, Wifi, WifiOff, Calendar } from "lucide-react"
 import { useAppContext } from "@/context/app-context"
 import { AnalyticsContent } from "@/components/analytics-content"
 import { DateRangePicker } from "@/components/date-range-picker"
@@ -28,6 +27,7 @@ export default function AnalyticsPage() {
   const instalaciones = context?.instalaciones ?? []
   const procesos = context?.procesos ?? []
   const alerts = context?.alerts ?? []
+  const stats = context?.stats
   const contextLoading = context?.isLoading ?? false
 
   const { sensors } = useSensors()
@@ -53,6 +53,21 @@ export default function AnalyticsPage() {
   const [selectedSensorType, setSelectedSensorType] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
   const [selectedInstallation, setSelectedInstallation] = useState("all")
+
+  const normalizeKey = (value: string) => value.trim().toLowerCase()
+  const getTipoMedidaFromSensor = (sensor: any): string => {
+    const raw =
+      sensor?.tipoMedida ??
+      sensor?.tipo_medida ??
+      sensor?.catalogo_sensores?.tipo_medida ??
+      sensor?.catalogo?.tipo_medida ??
+      sensor?.type
+    return String(raw || "")
+  }
+
+  const hasActiveFilters = useMemo(() => {
+    return selectedSensorType !== "all" || selectedStatus !== "all" || selectedInstallation !== "all"
+  }, [selectedSensorType, selectedStatus, selectedInstallation])
 
   // Calcular sensores conectados (con lecturas recientes)
   const activeSensors = useMemo(() => {
@@ -83,12 +98,16 @@ export default function AnalyticsPage() {
   }
 
   const availableTypes = useMemo(() => {
-    const set = new Set<string>()
+    const map = new Map<string, string>()
     sensors.forEach((s: any) => {
-      const t = detectType(String(s.name || s.descripcion || ""), s.type, s.unit)
-      if (t) set.add(t)
+      const raw = getTipoMedidaFromSensor(s)
+      const key = normalizeKey(raw)
+      if (!key) return
+      if (!map.has(key)) map.set(key, raw)
     })
-    return Array.from(set)
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1], "es"))
+      .map(([, raw]) => raw)
   }, [sensors])
 
   const availableInstallations = useMemo(() => {
@@ -97,8 +116,8 @@ export default function AnalyticsPage() {
 
   const filteredSensors = useMemo(() => {
     return sensors.filter((s: any) => {
-      const t = detectType(String(s.name || s.descripcion || ""), s.type, s.unit)
-      if (selectedSensorType !== "all" && t !== selectedSensorType) return false
+      const rawTipo = getTipoMedidaFromSensor(s)
+      if (selectedSensorType !== "all" && normalizeKey(rawTipo) !== normalizeKey(selectedSensorType)) return false
       if (selectedStatus !== "all" && s.status !== selectedStatus) return false
       if (selectedInstallation !== "all" && s.facilityName !== selectedInstallation) return false
       return true
@@ -169,14 +188,14 @@ export default function AnalyticsPage() {
   function detectType(name: string, type?: string, unit?: string): string {
     const t = String(type || '').toLowerCase()
     const u = String(unit || '').toLowerCase()
-    if (t.includes('ph')) return 'ph'
-    if (t.includes('temp')) return 'temperature'
-    if (t.includes('ox') || t.includes('oxígeno') || t.includes('oxygen')) return 'oxygen'
-    if (t.includes('sal')) return 'salinity'
-    if (t.includes('turb')) return 'turbidity'
-    if (t.includes('nitrat')) return 'nitrates'
-    if (t.includes('amon') || t.includes('ammo')) return 'ammonia'
-    if (t.includes('baro') || t.includes('presión')) return 'barometric'
+    if (t.includes('ph') || t.includes('potencial') || t.includes('hidrogeno') || t.includes('hidrógeno')) return 'ph'
+    if (t.includes('temp') || t.includes('temperatura')) return 'temperature'
+    if (t.includes('ox') || t.includes('oxígeno') || t.includes('oxigeno') || t.includes('oxygen') || t.includes('o2')) return 'oxygen'
+    if (t.includes('sal') || t.includes('salinidad')) return 'salinity'
+    if (t.includes('turb') || t.includes('turbidez')) return 'turbidity'
+    if (t.includes('nitrat') || t.includes('nitrato')) return 'nitrates'
+    if (t.includes('amon') || t.includes('ammo') || t.includes('amoniaco') || t.includes('amoníaco')) return 'ammonia'
+    if (t.includes('baro') || t.includes('presión') || t.includes('presion')) return 'barometric'
     if (u.includes('ph')) return 'ph'
     if (u.includes('°c') || u.includes('c')) return 'temperature'
     if (u.includes('mg/l') && (name || '').toLowerCase().includes('ox')) return 'oxygen'
@@ -184,14 +203,14 @@ export default function AnalyticsPage() {
     if (u.includes('ntu')) return 'turbidity'
     if (u.includes('hpa')) return 'barometric'
     const n = (name || '').toLowerCase()
-    if (n.includes('ph')) return 'ph'
-    if (n.includes('temp')) return 'temperature'
-    if (n.includes('ox') || n.includes('oxígeno') || n.includes('oxygen')) return 'oxygen'
-    if (n.includes('sal')) return 'salinity'
-    if (n.includes('turb')) return 'turbidity'
-    if (n.includes('nitrat')) return 'nitrates'
-    if (n.includes('amon') || n.includes('ammo')) return 'ammonia'
-    if (n.includes('baro') || n.includes('presión')) return 'barometric'
+    if (n.includes('ph') || n.includes('potencial') || n.includes('hidrogeno') || n.includes('hidrógeno')) return 'ph'
+    if (n.includes('temp') || n.includes('temperatura')) return 'temperature'
+    if (n.includes('ox') || n.includes('oxígeno') || n.includes('oxigeno') || n.includes('oxygen') || n.includes('o2')) return 'oxygen'
+    if (n.includes('sal') || n.includes('salinidad')) return 'salinity'
+    if (n.includes('turb') || n.includes('turbidez')) return 'turbidity'
+    if (n.includes('nitrat') || n.includes('nitrato')) return 'nitrates'
+    if (n.includes('amon') || n.includes('ammo') || n.includes('amoniaco') || n.includes('amoníaco')) return 'ammonia'
+    if (n.includes('baro') || n.includes('presión') || n.includes('presion')) return 'barometric'
     return 'other'
   }
 
@@ -276,7 +295,7 @@ export default function AnalyticsPage() {
       const desde = dateRange.from?.toISOString()
       const hasta = dateRange.to?.toISOString()
 
-      const sensorsSource = filteredSensors.length ? filteredSensors : sensors
+      const sensorsSource = hasActiveFilters ? filteredSensors : sensors
       if (!sensorsSource || sensorsSource.length === 0) {
         toast({
           title: "Sin sensores",
@@ -406,7 +425,7 @@ export default function AnalyticsPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [toast, dateRange, sensors, activeSensors, exportScope, exportFormat])
+  }, [toast, dateRange, sensors, filteredSensors, hasActiveFilters, exportScope, exportFormat])
 
   useEffect(() => {
     let cancelled = false
@@ -424,7 +443,7 @@ export default function AnalyticsPage() {
         const desde = dateRange.from.toISOString()
         const hasta = dateRange.to.toISOString()
 
-        const sensorsSource = filteredSensors.length ? filteredSensors : sensors
+        const sensorsSource = hasActiveFilters ? filteredSensors : sensors
         if (!sensorsSource || sensorsSource.length === 0) {
           if (!cancelled) {
             setPrevSummary(summary)
@@ -488,7 +507,8 @@ export default function AnalyticsPage() {
           3,
           async (s: any) => {
             const id = Number(s.id_sensor_instalado)
-            const sensorType = detectType(String(s.name || s.descripcion || ""), s.type, s.unit)
+            const rawTipo = getTipoMedidaFromSensor(s)
+            const sensorType = detectType(String(s.name || s.descripcion || ""), rawTipo, s.unit)
             if (!id) return { type: sensorType, promedios: [] as any[] }
             try {
               const resp = await backendApi
@@ -562,7 +582,7 @@ export default function AnalyticsPage() {
       clearTimeout(id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange.from, dateRange.to, sensors, activeSensors])
+  }, [dateRange.from, dateRange.to, sensors, filteredSensors, hasActiveFilters])
 
   // Mantener variables por compatibilidad futura; evitamos bloquear UI.
   void contextLoading
@@ -574,10 +594,11 @@ export default function AnalyticsPage() {
     promedioTemperatura: summary.promedioTemperatura,
     promedioPH: summary.promedioPH,
     promedioOxigeno: summary.promedioOxigeno,
-    alertasUltimaSemana: Array.isArray(alerts) ? alerts.length : 0,
-    eficienciaOperativa:
-      (instalaciones.filter((i: any) => i.estado_operativo === "activo").length / Math.max(instalaciones.length, 1)) * 100,
-    procesosCompletados: procesos.filter((p: any) => p.estado === "finalizado" || p.estado === "completado" || (p.fecha_final && new Date(p.fecha_final) < new Date())).length,
+    sensoresSeleccionados: (filteredSensors.length ? filteredSensors : sensors).length,
+    alertasActivas: typeof stats?.alertas_activas === "number" ? stats.alertas_activas : (Array.isArray(alerts) ? alerts.length : 0),
+    instalacionesTotales: typeof stats?.total_instalaciones === "number" ? stats.total_instalaciones : instalaciones.length,
+    instalacionesActivas: typeof stats?.instalaciones_activas === "number" ? stats.instalaciones_activas : instalaciones.filter((i: any) => i.estado_operativo === "activo").length,
+    procesosTotales: Array.isArray(procesos) ? procesos.length : 0,
   }
 
   const delta = {
@@ -689,7 +710,7 @@ export default function AnalyticsPage() {
                 <SelectItem value="all">Todos los tipos</SelectItem>
                 {availableTypes.map((t) => (
                   <SelectItem key={t} value={t}>
-                    {typeLabel(t)}
+                    {t}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -767,6 +788,19 @@ export default function AnalyticsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Sensores (selección)</CardTitle>
+            <Wifi className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {analytics.sensoresSeleccionados.toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">Basado en los filtros actuales</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{typeLabel("temperature")} Promedio</CardTitle>
             <Thermometer className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -807,22 +841,7 @@ export default function AnalyticsPage() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">Rango óptimo: 6.5-8.5</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Eficiencia Operativa</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <AnimatedNumber
-              value={analytics.eficienciaOperativa}
-              format={(v) => `${v.toFixed(1)}%`}
-              className="text-2xl font-bold"
-            />
-            <p className="text-xs text-muted-foreground">Instalaciones activas</p>
+            <p className="text-xs text-muted-foreground">Promedio en el período</p>
           </CardContent>
         </Card>
       </div>
@@ -848,29 +867,32 @@ export default function AnalyticsPage() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">Nivel óptimo {">"} 4.0 mg/L</p>
+            <p className="text-xs text-muted-foreground">Promedio en el período</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Alertas (7 días)</CardTitle>
+            <CardTitle className="text-sm font-medium">Alertas activas</CardTitle>
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analytics.alertasUltimaSemana}</div>
-            <p className="text-xs text-muted-foreground">Última semana</p>
+            <div className="text-2xl font-bold">{analytics.alertasActivas.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">En el sistema</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Procesos Completados</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Instalaciones activas</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{analytics.procesosCompletados}</div>
-            <p className="text-xs text-muted-foreground">Periodo seleccionado</p>
+            <div className="text-2xl font-bold">
+              {analytics.instalacionesActivas.toLocaleString()}
+              <span className="text-muted-foreground">/{analytics.instalacionesTotales.toLocaleString()}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Según instalaciones registradas</p>
           </CardContent>
         </Card>
       </div>
@@ -896,47 +918,6 @@ export default function AnalyticsPage() {
         </Card>
       </div>
 
-      {/* Reportes disponibles */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Reporte Diario
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-3">Resumen diario de parámetros y alertas</p>
-            <Badge variant="secondary">Disponible</Badge>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Análisis Semanal
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-3">Tendencias y comparativas semanales</p>
-            <Badge variant="secondary">Disponible</Badge>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Reporte Mensual
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-3">Análisis completo mensual con recomendaciones</p>
-            <Badge variant="secondary">Disponible</Badge>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }
