@@ -1,102 +1,151 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import type { EmpresaSucursal } from "@/types/empresa-sucursal"
 import { empresaSucursalToBranch, Branch } from "@/types/empresa-sucursal"
 import { api } from "@/lib/api"
 import { toast } from "sonner"
 
+function mapOrganizacionesYSucursales(orgs: any[], sucursales: any[]): Branch[] {
+  const mappedOrgs = orgs.map((org: any) => ({
+    id_empresa_sucursal: org.id_organizacion,
+    nombre: org.nombre,
+    tipo: "empresa" as const,
+    estado_operativo: (org.estado === "activa" ? "activa" : "inactiva") as "activa" | "inactiva",
+    fecha_registro: org.fecha_creacion,
+    id_estado: org.id_estado || 0,
+    id_cp: 0,
+    id_colonia: 0,
+    calle: org.direccion || "",
+    telefono: org.telefono,
+    email: org.correo,
+    latitud: org.latitud != null ? Number(org.latitud) : null,
+    longitud: org.longitud != null ? Number(org.longitud) : null,
+  }))
+
+  const mappedSucursales = sucursales.map((suc: any) => ({
+    id_empresa_sucursal: 10000 + suc.id_organizacion_sucursal,
+    id_padre: suc.id_organizacion,
+    nombre: suc.nombre_sucursal,
+    tipo: "sucursal" as const,
+    estado_operativo: (suc.estado === "activa" ? "activa" : "inactiva") as "activa" | "inactiva",
+    fecha_registro: suc.fecha_creacion,
+    id_estado: suc.id_estado || 0,
+    id_cp: suc.id_cp || 0,
+    id_colonia: suc.id_colonia || 0,
+    calle: suc.direccion_sucursal || "",
+    numero_int_ext: suc.numero_int_ext || null,
+    referencia: suc.referencia || null,
+    telefono: suc.telefono_sucursal,
+    email: suc.correo_sucursal,
+    latitud: suc.latitud != null ? Number(suc.latitud) : null,
+    longitud: suc.longitud != null ? Number(suc.longitud) : null,
+  }))
+
+  return [...mappedOrgs, ...mappedSucursales].map(empresaSucursalToBranch)
+}
+
 export function useBranches() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const loadBranches = useCallback(async () => {
     setLoading(true)
-    // Fetch both organizations and branches
-    Promise.all([
-      api.get<any[]>('/organizaciones').catch(() => []),
-      api.get<any[]>('/sucursales').catch(() => [])
-    ])
-      .then(([orgs, sucursales]) => {
-        // Map to internal format if needed, or use as is if types match
-        // The hook expects Branch[] which seems to be a legacy type wrapper around EmpresaSucursal
-        // Let's assume we need to map them similar to AppContext
+    try {
+      const [orgs, sucursales] = await Promise.all([
+        api.get<any[]>('/organizaciones').catch(() => []),
+        api.get<any[]>('/sucursales').catch(() => []),
+      ])
 
-        const mappedOrgs = orgs.map((org: any) => ({
-          id_empresa_sucursal: org.id_organizacion,
-          nombre: org.nombre,
-          tipo: "empresa" as const,
-          estado_operativo: (org.estado === "activa" ? "activa" : "inactiva") as "activa" | "inactiva",
-          fecha_registro: org.fecha_creacion,
-          id_estado: org.id_estado || 0,
-          id_cp: 0,
-          id_colonia: 0,
-          calle: org.direccion || "",
-          telefono: org.telefono,
-          email: org.correo
-        }))
-
-        const mappedSucursales = sucursales.map((suc: any) => ({
-          id_empresa_sucursal: 10000 + suc.id_organizacion_sucursal,
-          id_padre: suc.id_organizacion,
-          nombre: suc.nombre_sucursal,
-          tipo: "sucursal" as const,
-          estado_operativo: (suc.estado === "activa" ? "activa" : "inactiva") as "activa" | "inactiva",
-          fecha_registro: suc.fecha_creacion,
-          id_estado: suc.id_estado || 0,
-          id_cp: 0,
-          id_colonia: 0,
-          calle: suc.direccion_sucursal || "",
-          telefono: suc.telefono_sucursal,
-          email: suc.correo_sucursal
-        }))
-
-        const allData = [...mappedOrgs, ...mappedSucursales]
-        // Assuming empresaSucursalToBranch handles the conversion or is identity
-        setBranches(allData.map(empresaSucursalToBranch))
-      })
-      .catch((err) => {
-        console.error("Error loading branches:", err)
-        setBranches([])
-      })
-      .finally(() => setLoading(false))
+      setBranches(mapOrganizacionesYSucursales(orgs, sucursales))
+    } catch (err) {
+      console.error("Error loading branches:", err)
+      setBranches([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    loadBranches()
+  }, [loadBranches])
 
   // Agregar sucursal
   const addBranch = async (newBranch: Omit<EmpresaSucursal, "id_empresa_sucursal" | "fecha_registro">) => {
-    try {
-      const endpoint = newBranch.tipo === 'empresa' ? '/organizaciones' : '/sucursales'
-      const payload = newBranch.tipo === 'empresa' ? {
-        nombre: newBranch.nombre,
-        direccion: newBranch.calle,
-        telefono: newBranch.telefono,
-        correo: newBranch.email,
-        estado: newBranch.estado_operativo
-      } : {
-        id_organizacion: newBranch.id_padre,
-        nombre_sucursal: newBranch.nombre,
-        direccion_sucursal: newBranch.calle,
-        telefono_sucursal: newBranch.telefono,
-        correo_sucursal: newBranch.email,
-        estado: newBranch.estado_operativo
-      }
+    const endpoint = newBranch.tipo === 'empresa' ? '/organizaciones' : '/sucursales'
+    const payload = newBranch.tipo === 'empresa'
+      ? {
+          nombre: newBranch.nombre,
+          telefono: newBranch.telefono,
+          correo: newBranch.email,
+          estado: newBranch.estado_operativo,
+          direccion: newBranch.calle,
+          id_estado: newBranch.id_estado,
+          latitud: newBranch.latitud,
+          longitud: newBranch.longitud,
+        }
+      : {
+          id_organizacion: newBranch.id_padre,
+          nombre_sucursal: newBranch.nombre,
+          telefono_sucursal: newBranch.telefono,
+          correo_sucursal: newBranch.email,
+          estado: newBranch.estado_operativo,
+          direccion_sucursal: newBranch.calle,
+          numero_int_ext: newBranch.numero_int_ext,
+          referencia: newBranch.referencia,
+          id_cp: newBranch.id_cp,
+          id_colonia: newBranch.id_colonia,
+          id_estado: newBranch.id_estado,
+          latitud: newBranch.latitud,
+          longitud: newBranch.longitud,
+        }
 
-      await api.post(endpoint, payload)
-      // Refresh list (simplified, ideally we just add to state)
-      window.location.reload()
-    } catch (error) {
-      console.error("Error creating branch:", error)
-      throw error
-    }
+    await api.post(endpoint, payload)
+    await loadBranches()
   }
 
   // Actualizar sucursal
   const updateBranch = async (id: number, updated: Partial<EmpresaSucursal>) => {
-    // Logic to determine if it's org or branch based on ID or type
-    // This is tricky with the ID offset. 
-    // For now, let's assume we can't easily update without knowing the real ID type.
-    // We might need to store the real ID and type in the object.
-    console.warn("Update not fully implemented due to ID mapping complexity")
+    const target = branches.find((branch) => branch.id_empresa_sucursal === id)
+    if (!target) {
+      throw new Error("No se encontró el registro a actualizar")
+    }
+
+    if (target.tipo === "empresa") {
+      await api.put(`/organizaciones/${id}`, {
+        ...(updated.nombre !== undefined ? { nombre: updated.nombre } : {}),
+        ...(updated.telefono !== undefined ? { telefono: updated.telefono } : {}),
+        ...(updated.email !== undefined ? { correo: updated.email } : {}),
+        ...(updated.estado_operativo !== undefined ? { estado: updated.estado_operativo } : {}),
+        ...(updated.calle !== undefined ? { direccion: updated.calle } : {}),
+        ...(updated.id_estado !== undefined ? { id_estado: updated.id_estado } : {}),
+        ...(updated.latitud !== undefined ? { latitud: updated.latitud } : {}),
+        ...(updated.longitud !== undefined ? { longitud: updated.longitud } : {}),
+      })
+    } else {
+      const realSucursalId = id - 10000
+      if (!Number.isFinite(realSucursalId) || realSucursalId <= 0) {
+        throw new Error("ID de sucursal inválido")
+      }
+
+      await api.put(`/sucursales/${realSucursalId}`, {
+        ...(updated.id_padre !== undefined ? { id_organizacion: updated.id_padre } : {}),
+        ...(updated.nombre !== undefined ? { nombre_sucursal: updated.nombre } : {}),
+        ...(updated.telefono !== undefined ? { telefono_sucursal: updated.telefono } : {}),
+        ...(updated.email !== undefined ? { correo_sucursal: updated.email } : {}),
+        ...(updated.estado_operativo !== undefined ? { estado: updated.estado_operativo } : {}),
+        ...(updated.calle !== undefined ? { direccion_sucursal: updated.calle } : {}),
+        ...(updated.numero_int_ext !== undefined ? { numero_int_ext: updated.numero_int_ext } : {}),
+        ...(updated.referencia !== undefined ? { referencia: updated.referencia } : {}),
+        ...(updated.id_cp !== undefined ? { id_cp: updated.id_cp } : {}),
+        ...(updated.id_colonia !== undefined ? { id_colonia: updated.id_colonia } : {}),
+        ...(updated.id_estado !== undefined ? { id_estado: updated.id_estado } : {}),
+        ...(updated.latitud !== undefined ? { latitud: updated.latitud } : {}),
+        ...(updated.longitud !== undefined ? { longitud: updated.longitud } : {}),
+      })
+    }
+
+    await loadBranches()
   }
 
   // Eliminar sucursal
@@ -111,7 +160,6 @@ export function useBranches() {
       if (target.tipo === "empresa") {
         await api.delete(`/organizaciones/${id}`)
       } else {
-        // En este módulo legacy usamos un offset de 10000 para evitar colisiones
         const realSucursalId = id - 10000
         if (!Number.isFinite(realSucursalId) || realSucursalId <= 0) {
           throw new Error("ID de sucursal inválido")
@@ -134,5 +182,6 @@ export function useBranches() {
     addBranch,
     updateBranch,
     deleteBranch,
+    reload: loadBranches,
   }
 }

@@ -7,9 +7,22 @@ import { Button } from "@/components/ui/button"
 import type { ParametroMonitoreo } from "@/types/lectura"
 import { Thermometer, Droplets, Zap, Eye, Download, RefreshCw } from "lucide-react"
 import { backendApi, type Lectura as BackendLectura } from "@/lib/backend-client"
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceArea,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 interface ParameterMonitoringCardProps {
   parametro: ParametroMonitoreo
+  isRealTime?: boolean
+  showModeToggle?: boolean
 }
 
 const getParameterIcon = (nombre: string) => {
@@ -56,15 +69,20 @@ const getChartColor = (estado: string) => {
   }
 }
 
-export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardProps) {
-  const [isRealTime, setIsRealTime] = useState(false)
+export function ParameterMonitoringCard({
+  parametro,
+  isRealTime,
+  showModeToggle = true,
+}: ParameterMonitoringCardProps) {
+  const [localIsRealTime, setLocalIsRealTime] = useState(false)
   const [lecturas, setLecturas] = useState(parametro.lecturas ?? [])
   const [loading, setLoading] = useState(false)
+  const effectiveIsRealTime = isRealTime ?? localIsRealTime
 
   // Refetch de datos reales cada 30s en modo tiempo real
   useEffect(() => {
     let interval: NodeJS.Timeout | undefined
-    if (isRealTime) {
+    if (effectiveIsRealTime) {
       const fetchLecturas = async () => {
         setLoading(true)
         try {
@@ -121,20 +139,51 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isRealTime, parametro])
+  }, [effectiveIsRealTime, parametro])
 
   // Preparar datos para la gráfica
   const chartData = useMemo(() => {
-    return lecturas.map((lectura) => ({
-      time: new Date(lectura.timestamp).toLocaleTimeString("es-ES", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      valor: lectura.valor,
-      timestamp: lectura.timestamp,
-      estado: lectura.estado || "normal",
-    }))
+    return lecturas
+      .map((lectura) => {
+        const date = new Date(lectura.timestamp)
+        const isValid = !Number.isNaN(date.getTime())
+        return {
+          time: isValid
+            ? date.toLocaleTimeString("es-ES", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "--:--",
+          timestampMs: isValid ? date.getTime() : 0,
+          valor: Number(lectura.valor ?? 0),
+          timestamp: lectura.timestamp,
+          estado: lectura.estado || "normal",
+        }
+      })
+      .filter((point) => Number.isFinite(point.valor) && Number.isFinite(point.timestampMs) && point.timestampMs > 0)
+      .sort((a, b) => a.timestampMs - b.timestampMs)
   }, [lecturas])
+
+  const chartBounds = useMemo(() => {
+    const values = chartData.map((point) => point.valor)
+    const minData = values.length > 0 ? Math.min(...values) : 0
+    const maxData = values.length > 0 ? Math.max(...values) : 1
+    const minRange = Number(parametro.rango_min)
+    const maxRange = Number(parametro.rango_max)
+    const hasRange = Number.isFinite(minRange) && Number.isFinite(maxRange) && minRange < maxRange
+    const minBase = hasRange ? Math.min(minData, minRange) : minData
+    const maxBase = hasRange ? Math.max(maxData, maxRange) : maxData
+    const span = Math.max(1, maxBase - minBase)
+    const padding = span * 0.15
+
+    return {
+      hasRange,
+      minRange,
+      maxRange,
+      minY: minBase - padding,
+      maxY: maxBase + padding,
+    }
+  }, [chartData, parametro.rango_min, parametro.rango_max])
 
   const downloadCSV = () => {
     if (chartData.length === 0) return
@@ -155,7 +204,8 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
   }
 
   const toggleRealTime = () => {
-    setIsRealTime(!isRealTime)
+    if (isRealTime !== undefined) return
+    setLocalIsRealTime((prev) => !prev)
   }
 
   return (
@@ -173,15 +223,17 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
                 {parametro.alertas_count ?? 0}
               </Badge>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleRealTime}
-              className={`text-xs ${isRealTime ? "bg-green-50 border-green-200 text-green-700" : ""}`}
-            >
-              <RefreshCw className={`h-3 w-3 mr-1 ${isRealTime ? "animate-spin" : ""}`} />
-              {isRealTime ? "Tiempo Real" : "Histórico"}
-            </Button>
+            {showModeToggle && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleRealTime}
+                className={`text-xs ${effectiveIsRealTime ? "bg-green-50 border-green-200 text-green-700" : ""}`}
+              >
+                <RefreshCw className={`h-3 w-3 mr-1 ${effectiveIsRealTime ? "animate-spin" : ""}`} />
+                {effectiveIsRealTime ? "Tiempo Real" : "Histórico"}
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={downloadCSV}>
               <Download className="h-3 w-3 mr-1" />
               CSV
@@ -189,7 +241,7 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
           </div>
         </div>
         <div className="text-xs text-muted-foreground">
-          {isRealTime
+          {effectiveIsRealTime
             ? `Tiempo real • Rango: ${parametro.rango_min ?? 0} - ${parametro.rango_max ?? 0}`
             : `Promedio: ${(parametro.promedio ?? 0).toFixed(1)} ${parametro.unidad ?? parametro.unidad_medida ?? ""} • Rango: ${parametro.rango_min ?? 0} - ${parametro.rango_max ?? 0}`}
         </div>
@@ -197,8 +249,77 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
 
       <CardContent className="pt-0">
         <div className="h-48 mb-3">
-          {/* Aquí iría la gráfica, usando chartData */}
-          {/* Puedes integrar Chart.js, Recharts, etc. */}
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis
+                  dataKey="timestampMs"
+                  type="number"
+                  domain={["dataMin", "dataMax"]}
+                  scale="time"
+                  tick={{ fontSize: 10 }}
+                  minTickGap={24}
+                  tickFormatter={(value: number) =>
+                    new Date(value).toLocaleTimeString("es-ES", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  }
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  width={48}
+                  domain={[chartBounds.minY, chartBounds.maxY]}
+                  tickFormatter={(value: number) => Number(value).toFixed(1)}
+                />
+                {chartBounds.hasRange && (
+                  <ReferenceArea
+                    y1={chartBounds.minRange}
+                    y2={chartBounds.maxRange}
+                    fill="#22c55e"
+                    fillOpacity={0.08}
+                    strokeOpacity={0}
+                  />
+                )}
+                {chartBounds.hasRange && (
+                  <>
+                    <ReferenceLine y={chartBounds.minRange} stroke="#16a34a" strokeDasharray="4 4" />
+                    <ReferenceLine y={chartBounds.maxRange} stroke="#16a34a" strokeDasharray="4 4" />
+                  </>
+                )}
+                <Tooltip
+                  formatter={(value: number) => [
+                    `${Number(value).toFixed(2)} ${parametro.unidad ?? parametro.unidad_medida ?? ""}`.trim(),
+                    parametro.nombre ?? parametro.nombre_parametro ?? "Valor",
+                  ]}
+                  labelFormatter={(label) =>
+                    new Date(Number(label)).toLocaleString("es-ES", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  }
+                />
+                <Line
+                  type="monotone"
+                  dataKey="valor"
+                  stroke={getChartColor(parametro.estado ?? "normal")}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 5, strokeWidth: 2, fill: "#ffffff" }}
+                  isAnimationActive={!effectiveIsRealTime}
+                  connectNulls={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full rounded-md border border-dashed flex items-center justify-center text-xs text-muted-foreground">
+              No hay lecturas para graficar en este período
+            </div>
+          )}
         </div>
         {/* Estado actual */}
         <div className="flex items-center justify-between">
@@ -209,7 +330,7 @@ export function ParameterMonitoringCard({ parametro }: ParameterMonitoringCardPr
             {parametro.estado === "advertencia" && "⚠️ Advertencia"}
             {parametro.estado === "critico" && "🚨 Crítico"}
           </div>
-          {isRealTime && (
+          {effectiveIsRealTime && (
             <div className="text-xs text-muted-foreground">
               Actualizando cada 30s • {chartData.length} puntos
             </div>

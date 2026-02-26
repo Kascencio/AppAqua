@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useState, useContext, useEffect, type ReactNode } from "react"
+import { createContext, useState, useContext, useEffect, useCallback, type ReactNode } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import type { User } from "@/types/user"
 import { backendApi } from "@/lib/backend-client"
@@ -34,18 +34,23 @@ interface AuthProviderProps {
 
 // Helper to map backend user to frontend User type
 const mapUser = (backendUser: any): User => {
+  const rawRole = String(backendUser.role || backendUser.tipo_rol?.nombre || "").toLowerCase()
   let role: User["role"] = "standard"
-  if (backendUser.tipo_rol?.nombre === "ADMIN" || backendUser.id_rol === 1) role = "admin"
-  if (backendUser.tipo_rol?.nombre === "SUPERADMIN") role = "superadmin"
+  if (rawRole.includes("superadmin")) role = "superadmin"
+  else if (rawRole.includes("admin")) role = "admin"
+  else if (rawRole.includes("operator")) role = "operator"
+  else if (rawRole.includes("manager")) role = "manager"
+  else if (rawRole.includes("viewer")) role = "viewer"
 
   return {
     id: backendUser.id_usuario,
     name: backendUser.nombre_completo,
     email: backendUser.correo,
     role: role,
-    status: backendUser.estado === "activo" ? "active" : "inactive",
-    branchAccess: [], // TODO: Load from backend if available
-    createdAt: new Date().toISOString(), // Placeholder
+    status: (backendUser.status || backendUser.estado) === "activo" || backendUser.status === "active" ? "active" : "inactive",
+    branchAccess: Array.isArray(backendUser.branchAccess) ? backendUser.branchAccess : [],
+    facilityAccess: Array.isArray(backendUser.facilityAccess) ? backendUser.facilityAccess : [],
+    createdAt: backendUser.createdAt || backendUser.fecha_creacion || new Date().toISOString(),
     phone: backendUser.telefono,
   }
 }
@@ -67,6 +72,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const clearAccessTokenCookie = () => {
     document.cookie = 'access_token=; Path=/; Max-Age=0; SameSite=Lax'
   }
+
+  const clearSession = useCallback((redirectToLogin: boolean) => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("token")
+      localStorage.removeItem("user_data")
+    }
+    clearAccessTokenCookie()
+    setUser(null)
+    if (redirectToLogin) {
+      router.push("/login")
+    }
+  }, [router])
 
   // Verificar autenticación al cargar la app
   useEffect(() => {
@@ -91,6 +108,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = localStorage.getItem("token")
       
       if (!token) {
+        localStorage.removeItem("user_data")
         setUser(null)
         return
       }
@@ -110,10 +128,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (storedUser) {
         setUser(JSON.parse(storedUser))
       } else {
-        // If we have token but no user data, we might be in an inconsistent state.
-        // Try to fetch user info if possible, or logout.
-        // Since we don't have a documented /me endpoint, we'll logout to be safe.
-        logout()
+        // Estado inconsistente: limpiar sesión silenciosamente.
+        clearSession(false)
       }
 
     } catch (error) {
@@ -123,6 +139,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(false)
     }
   }
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      clearSession(true)
+    }
+
+    window.addEventListener("aqua:auth-unauthorized", onUnauthorized)
+    return () => {
+      window.removeEventListener("aqua:auth-unauthorized", onUnauthorized)
+    }
+  }, [clearSession])
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -182,24 +209,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }
 
   const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user_data')
-    clearAccessTokenCookie()
-    setUser(null)
-    router.push('/login')
+    clearSession(true)
   }
 
   const forgotPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
-    // Endpoint not documented in the provided list, keeping placeholder or removing
-    // The user provided list doesn't have forgot-password.
-    // We'll return an error or mock it.
-    console.warn("Forgot password endpoint not available in backend documentation")
-    return { success: false, error: "Función no disponible en este momento" }
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ correo: email }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        return { success: false, error: data?.error || "No se pudo iniciar recuperación de contraseña" }
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error?.message || "Error de conexión" }
+    }
   }
 
   const resetPassword = async (token: string, newPassword: string, confirmPassword: string): Promise<{ success: boolean; error?: string }> => {
-    // Endpoint not documented
-    return { success: false, error: "Función no disponible en este momento" }
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword, confirmPassword }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        return { success: false, error: data?.error || "No se pudo restablecer la contraseña" }
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error?.message || "Error de conexión" }
+    }
   }
 
   const refreshToken = async (): Promise<boolean> => {

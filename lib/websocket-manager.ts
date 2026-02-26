@@ -43,6 +43,7 @@ interface WebSocketConnection {
 class WebSocketManager {
   private connections: Map<string, WebSocketConnection> = new Map()
   private subscribers: Map<string, Set<SubscriberCallback>> = new Map()
+  private pendingCloseTimeouts: Map<string, NodeJS.Timeout> = new Map()
   private baseUrl: string
 
   constructor() {
@@ -65,6 +66,14 @@ class WebSocketManager {
    */
   private getConnectionKey(instalacionId: number): string {
     return `instalacion-${instalacionId}`
+  }
+
+  private cancelPendingClose(key: string) {
+    const timeout = this.pendingCloseTimeouts.get(key)
+    if (timeout) {
+      clearTimeout(timeout)
+      this.pendingCloseTimeouts.delete(key)
+    }
   }
 
   /**
@@ -209,6 +218,7 @@ class WebSocketManager {
    */
   subscribe(instalacionId: number, callback: SubscriberCallback): () => void {
     const key = this.getConnectionKey(instalacionId)
+    this.cancelPendingClose(key)
 
     // Crear set de suscriptores si no existe
     if (!this.subscribers.has(key)) {
@@ -232,7 +242,14 @@ class WebSocketManager {
 
         // Si no quedan suscriptores, cerrar la conexión
         if (subscribers.size === 0) {
-          this.closeConnection(instalacionId)
+          const timeout = setTimeout(() => {
+            const currentSubscribers = this.subscribers.get(key)
+            if (!currentSubscribers || currentSubscribers.size === 0) {
+              this.closeConnection(instalacionId)
+            }
+            this.pendingCloseTimeouts.delete(key)
+          }, 500)
+          this.pendingCloseTimeouts.set(key, timeout)
         }
       }
     }
@@ -244,6 +261,7 @@ class WebSocketManager {
   private closeConnection(instalacionId: number) {
     const key = this.getConnectionKey(instalacionId)
     const connection = this.connections.get(key)
+    this.cancelPendingClose(key)
 
     if (connection) {
       console.log(`[WS Manager] 🔌 Cerrando conexión de instalación ${instalacionId}`)
@@ -254,9 +272,10 @@ class WebSocketManager {
       }
 
       // Cerrar socket
-      if (connection.socket.readyState === WebSocket.OPEN || 
-          connection.socket.readyState === WebSocket.CONNECTING) {
+      if (connection.socket.readyState === WebSocket.OPEN) {
         connection.socket.close()
+      } else if (connection.socket.readyState === WebSocket.CONNECTING) {
+        connection.socket.onopen = () => connection.socket.close()
       }
 
       // Eliminar del pool
@@ -272,6 +291,9 @@ class WebSocketManager {
    */
   closeAll() {
     console.log('[WS Manager] 🔌 Cerrando todas las conexiones...')
+
+    this.pendingCloseTimeouts.forEach((timeout) => clearTimeout(timeout))
+    this.pendingCloseTimeouts.clear()
     
     this.connections.forEach((connection, key) => {
       if (connection.reconnectTimeout) {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import type { Especie } from "@/types/especie"
 import { useToast } from "@/hooks/use-toast"
+import { api } from "@/lib/api"
 
 export function useEspecies() {
   const [especies, setEspecies] = useState<Especie[]>([])
@@ -14,10 +15,19 @@ export function useEspecies() {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch("/api/especies")
-      if (!response.ok) throw new Error("Error al cargar especies")
-      const data = await response.json()
-      setEspecies(data)
+      let data: any[] = []
+      try {
+        data = await api.get<any[]>("/catalogo-especies")
+      } catch {
+        data = await api.get<any[]>("/especies")
+      }
+
+      const normalized = (Array.isArray(data) ? data : []).map((item) => ({
+        ...item,
+        nombre: item.nombre ?? item.nombre_comun ?? `Especie ${item.id_especie}`,
+      })) as Especie[]
+
+      setEspecies(normalized)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al cargar especies"
       setError(errorMessage)

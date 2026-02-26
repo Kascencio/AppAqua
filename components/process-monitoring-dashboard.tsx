@@ -249,7 +249,12 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
           ) : parametros.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {parametros.map((parametro) => (
-                <ParameterMonitoringCard key={parametro.nombre ?? parametro.nombre_parametro} parametro={parametro} />
+                <ParameterMonitoringCard
+                  key={parametro.nombre ?? parametro.nombre_parametro}
+                  parametro={parametro}
+                  isRealTime={isRealTime}
+                  showModeToggle={false}
+                />
               ))}
             </div>
           ) : (

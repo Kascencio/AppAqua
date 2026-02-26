@@ -23,27 +23,27 @@ async function testLogin() {
 
     const loginData = await loginResponse.json()
     
-    if (loginResponse.ok && loginData.success) {
+    if (loginResponse.ok && loginData.token) {
       console.log('✅ Login exitoso!')
-      console.log('👤 Usuario:', loginData.user.name)
-      console.log('🔑 Rol:', loginData.user.role)
-      console.log('🏢 Acceso a sucursales:', loginData.user.branchAccess)
+      console.log('👤 Usuario:', loginData.usuario?.nombre_completo || loginData.usuario?.name)
+      console.log('🔑 Rol:', loginData.usuario?.role || loginData.usuario?.tipo_rol?.nombre)
+      console.log('🏢 Acceso a sucursales:', loginData.usuario?.branchAccess || [])
       
       // 2. Probar endpoint /me
       console.log('\n2. Probando endpoint /me...')
       const meResponse = await fetch(`${API_BASE}/auth/me`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${loginData.tokens.accessToken}`,
+          'Authorization': `Bearer ${loginData.token}`,
           'Content-Type': 'application/json',
         }
       })
 
       const meData = await meResponse.json()
       
-      if (meResponse.ok && meData.success) {
+      if (meResponse.ok) {
         console.log('✅ Endpoint /me funciona correctamente!')
-        console.log('👤 Usuario:', meData.user.name)
+        console.log('👤 Usuario:', meData.usuario?.nombre_completo || meData.usuario?.name)
       } else {
         console.log('❌ Error en endpoint /me:', meData.error)
       }
@@ -59,7 +59,7 @@ async function testLogin() {
 
       const logoutData = await logoutResponse.json()
       
-      if (logoutResponse.ok && logoutData.success) {
+      if (logoutResponse.ok) {
         console.log('✅ Logout exitoso!')
       } else {
         console.log('❌ Error en logout:', logoutData.error)

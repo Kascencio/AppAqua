@@ -16,6 +16,8 @@ export interface EmpresaSucursal {
   calle: string
   numero_int_ext?: string | null
   referencia?: string | null
+  latitud?: number | null
+  longitud?: number | null
 }
 
 export interface EmpresaSucursalCompleta extends EmpresaSucursal {
@@ -64,6 +66,10 @@ export interface Branch extends EmpresaSucursal {
 
 // Función para convertir EmpresaSucursal a Branch (legacy)
 export function empresaSucursalToBranch(empresa: EmpresaSucursal): Branch {
+  const lat = empresa.latitud != null ? Number(empresa.latitud) : NaN
+  const lng = empresa.longitud != null ? Number(empresa.longitud) : NaN
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng)
+
   return {
     ...empresa,
     id: empresa.id_empresa_sucursal,
@@ -82,5 +88,11 @@ export function empresaSucursalToBranch(empresa: EmpresaSucursal): Branch {
       postalCodeId: empresa.id_cp,
       neighborhoodId: empresa.id_colonia,
     },
+    ...(hasCoords
+      ? {
+          location: { lat, lng },
+          coordinates: [lat, lng] as [number, number],
+        }
+      : {}),
   }
 }

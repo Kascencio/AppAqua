@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { DateRange } from "react-day-picker"
 import { backendApi, type Promedio } from "@/lib/backend-client"
-import { useSensors } from "@/hooks/use-sensors"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -13,11 +12,10 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from "recharts"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
 type ParamKey = string
 
@@ -25,6 +23,11 @@ type TrendPoint = {
   ts: string // ISO
   value: number
   muestras: number
+}
+
+type OptionWithCount = {
+  value: string
+  count: number
 }
 
 function computeBucketMinutes(from: Date, to: Date, targetPoints = 240): number {
@@ -151,7 +154,6 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 }
 
 export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRange; sensors?: any[] }) {
-  const { sensors: hookSensors = [], loading: sensorsLoading, error: sensorsError } = useSensors()
   const [parameter, setParameter] = useState<ParamKey>("temperature")
   const [data, setData] = useState<TrendPoint[]>([])
   const [loading, setLoading] = useState(false)
@@ -162,22 +164,25 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
   const from = dateRange?.from
   const to = dateRange?.to
 
-  const sourceSensors = useMemo(() => (sensors && sensors.length ? sensors : hookSensors), [sensors, hookSensors])
+  const sourceSensors = useMemo(() => (Array.isArray(sensors) ? sensors : []), [sensors])
 
-  const availableTypes = useMemo(() => {
-    const map = new Map<string, string>()
+  const availableTypeOptions = useMemo<OptionWithCount[]>(() => {
+    const map = new Map<string, OptionWithCount>()
     sourceSensors.forEach((s: any) => {
       const raw = getTipoMedidaFromSensor(s)
       const key = normalizeKey(raw)
       if (!key) return
-      // conservar el primer valor "bonito" para mostrar
-      if (!map.has(key)) map.set(key, raw)
+      const prev = map.get(key)
+      if (!prev) {
+        map.set(key, { value: raw, count: 1 })
+        return
+      }
+      prev.count += 1
     })
-    // orden estable por label
-    return Array.from(map.entries())
-      .sort((a, b) => a[1].localeCompare(b[1], "es"))
-      .map(([, raw]) => raw)
+    return Array.from(map.values()).sort((a, b) => a.value.localeCompare(b.value, "es"))
   }, [sourceSensors])
+
+  const availableTypes = useMemo(() => availableTypeOptions.map((option) => option.value), [availableTypeOptions])
 
   useEffect(() => {
     if (availableTypes.length && !availableTypes.includes(parameter)) {
@@ -187,7 +192,14 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
 
   const sensorsToQuery = useMemo(() => {
     const key = normalizeKey(parameter)
-    return (sourceSensors || []).filter((s: any) => normalizeKey(getTipoMedidaFromSensor(s)) === key)
+    return (sourceSensors || [])
+      .filter((s: any) => normalizeKey(getTipoMedidaFromSensor(s)) === key)
+      .slice(0, 12)
+  }, [sourceSensors, parameter])
+
+  const sensorsAvailableForParameter = useMemo(() => {
+    const key = normalizeKey(parameter)
+    return (sourceSensors || []).filter((s: any) => normalizeKey(getTipoMedidaFromSensor(s)) === key).length
   }, [sourceSensors, parameter])
 
   useEffect(() => {
@@ -272,8 +284,14 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
     }
   }, [from, to, sensorsToQuery])
 
-  const anyError = sensorsError || error
+  const anyError = error
   const meta = pickMeta(parameter, sourceSensors)
+  const chartConfig = {
+    value: {
+      label: meta.label,
+      color: meta.color,
+    },
+  } satisfies ChartConfig
 
   if (!from || !to) return null
 
@@ -302,9 +320,17 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
                 <SelectValue placeholder="Parámetro" />
               </SelectTrigger>
               <SelectContent>
-                {availableTypes.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {pickMeta(t, sourceSensors).label}
+                {availableTypeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {(() => {
+                      const info = pickMeta(option.value, sourceSensors)
+                      const raw = humanizeTipoMedida(option.value)
+                      const label =
+                        info.label.toLowerCase() === raw.toLowerCase()
+                          ? info.label
+                          : `${info.label} · ${raw}`
+                      return `${label} (${option.count})`
+                    })()}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -315,15 +341,14 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
       <CardContent>
         {anyError && data.length > 0 && <div className="mb-2 text-xs text-destructive">{String(anyError)}</div>}
 
-        {sensorsLoading && data.length === 0 ? (
+        {loading && data.length === 0 ? (
           <div className="h-72 flex items-center justify-center text-muted-foreground">Cargando…</div>
         ) : data.length === 0 ? (
           <div className="h-40 flex items-center justify-center text-muted-foreground">
             No hay datos para {meta.label} en el rango
           </div>
         ) : (
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <ChartContainer config={chartConfig} className="h-72">
               <LineChart data={data} margin={{ left: 12, right: 12, top: 8, bottom: 12 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -336,21 +361,26 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
                   tick={{ fontSize: 10 }}
                 />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip
-                  labelFormatter={(label: any) => {
-                    const d = new Date(String(label))
-                    return isNaN(d.getTime()) ? String(label) : format(d, "dd MMM yyyy HH:mm", { locale: es })
-                  }}
-                  formatter={(value: any) => {
-                    const n = Number(value)
-                    const unit = meta.unit ? ` ${meta.unit}` : ""
-                    return [`${Number.isFinite(n) ? n.toFixed(2) : "0.00"}${unit}`, meta.label]
-                  }}
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(label) => {
+                        const d = new Date(String(label))
+                        return isNaN(d.getTime()) ? String(label) : format(d, "dd MMM yyyy HH:mm", { locale: es })
+                      }}
+                      valueFormatter={(value) => {
+                        const n = Number(value)
+                        const unit = meta.unit ? ` ${meta.unit}` : ""
+                        return `${Number.isFinite(n) ? n.toFixed(2) : "0.00"}${unit}`
+                      }}
+                    />
+                  }
                 />
                 <Line
                   type="monotone"
                   dataKey="value"
-                  stroke={meta.color}
+                  stroke="var(--color-value)"
                   strokeWidth={2}
                   dot={{ r: 2 }}
                   activeDot={{ r: 4 }}
@@ -359,13 +389,12 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
                   animationEasing="ease-out"
                 />
               </LineChart>
-            </ResponsiveContainer>
-          </div>
+          </ChartContainer>
         )}
 
         {!loading && sensorsToQuery.length > 0 && (
           <div className="mt-2 text-xs text-muted-foreground">
-            Sensores considerados: {sensorsToQuery.length}
+            Sensores considerados: {sensorsToQuery.length} de {sensorsAvailableForParameter}
           </div>
         )}
       </CardContent>

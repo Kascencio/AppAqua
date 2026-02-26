@@ -20,7 +20,7 @@ export function RoleBasedWrapper({
   requiredRole,
   allowedRoles,
   fallback,
-  showAccessDenied = true,
+  showAccessDenied = false,
 }: RoleBasedWrapperProps) {
   const permissions = useRolePermissions()
 

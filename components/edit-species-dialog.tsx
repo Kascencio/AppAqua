@@ -21,7 +21,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { X, Plus } from "lucide-react"
 import { useSpecies } from "@/hooks/use-species"
 import type { Especie, EspecieUpdate } from "@/types/especie"
-import type { EspecieParametroCreate } from "@/types/especie-parametro"
 import { toast } from "sonner"
 
 interface EditSpeciesDialogProps {
@@ -59,7 +58,7 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
       })
 
       // Cargar parámetros existentes
-      const existingParams = speciesParameters
+      const fromRelation = speciesParameters
         .filter((sp) => sp.id_especie === species.id_especie)
         .map((sp) => ({
           id_parametro: sp.id_parametro,
@@ -68,6 +67,18 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
           isExisting: true,
           id_especie_parametro: sp.id_especie_parametro,
         }))
+
+      const fromSpeciesPayload = Array.isArray((species as any).parametros)
+        ? (species as any).parametros.map((sp: any) => ({
+            id_parametro: Number(sp.id_parametro),
+            Rmin: Number(sp.Rmin),
+            Rmax: Number(sp.Rmax),
+            isExisting: true,
+            id_especie_parametro: Number(sp.id_especie_parametro) || undefined,
+          })).filter((sp: any) => Number.isFinite(sp.id_parametro) && Number.isFinite(sp.Rmin) && Number.isFinite(sp.Rmax))
+        : []
+
+      const existingParams = fromRelation.length > 0 ? fromRelation : fromSpeciesPayload
 
       setParameterConfigs(existingParams)
       setSelectedParameterId("")
@@ -137,7 +148,7 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.nombre_comun?.trim() || !formData.nombre_cientifico?.trim()) {
+    if (!formData.nombre_comun?.trim()) {
       toast.error("Complete los campos obligatorios")
       return
     }
@@ -150,21 +161,12 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
     try {
       setSubmitting(true)
 
-      // Preparar parámetros nuevos
-      const nuevosParametros: EspecieParametroCreate[] = parameterConfigs
-        .filter((config) => !config.isExisting)
-        .map((config) => ({
-          id_especie: species.id_especie,
-          id_parametro: config.id_parametro,
-          Rmin: config.Rmin,
-          Rmax: config.Rmax,
-        }))
-
       // Merge formData with parameters for the updateSpecies call
       const updateData = {
         nombre: formData.nombre_comun || '',
         nombre_cientifico: formData.nombre_cientifico,
         tipo_cultivo: formData.tipo_cultivo,
+        descripcion: formData.descripcion,
         estado: formData.estado,
         parametros: parameterConfigs.map((config) => ({
           id_parametro: config.id_parametro,
@@ -188,7 +190,7 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto px-4 sm:px-6">
         <DialogHeader>
           <DialogTitle>Editar Especie</DialogTitle>
           <DialogDescription>
@@ -198,7 +200,7 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Información básica */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="nombre_comun">Nombre Común *</Label>
               <Input
@@ -210,18 +212,17 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="nombre_cientifico">Nombre Científico *</Label>
+              <Label htmlFor="nombre_cientifico">Nombre Científico</Label>
               <Input
                 id="nombre_cientifico"
                 value={formData.nombre_cientifico || ""}
                 onChange={(e) => setFormData({ ...formData, nombre_cientifico: e.target.value })}
                 placeholder="ej: Oreochromis niloticus"
-                required
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="tipo_cultivo">Tipo de Cultivo</Label>
               <Select
@@ -250,8 +251,8 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="activo">Activo</SelectItem>
-                  <SelectItem value="inactivo">Inactivo</SelectItem>
+                  <SelectItem value="activa">Activa</SelectItem>
+                  <SelectItem value="inactiva">Inactiva</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -275,7 +276,7 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Agregar nuevo parámetro */}
-              <div className="grid grid-cols-4 gap-2 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
                 <div className="space-y-2">
                   <Label>Parámetro</Label>
                   <Select value={selectedParameterId} onValueChange={setSelectedParameterId}>
@@ -330,13 +331,13 @@ export function EditSpeciesDialog({ species, open, onOpenChange, onSuccess }: Ed
                     {parameterConfigs.map((config) => (
                       <div
                         key={config.id_parametro}
-                        className="flex items-center justify-between p-3 border rounded-lg"
+                        className="flex items-center justify-between gap-2 p-3 border rounded-lg overflow-hidden"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2 flex-wrap">
                           <Badge variant={config.isExisting ? "default" : "secondary"}>
                             {getParameterName(config.id_parametro)}
                           </Badge>
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-sm text-muted-foreground break-words">
                             {config.Rmin} – {config.Rmax} {getParameterUnit(config.id_parametro)}
                           </span>
                           {config.isExisting && (

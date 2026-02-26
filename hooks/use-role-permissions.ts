@@ -97,27 +97,30 @@ export function useRolePermissions(): RolePermissions {
     case "admin":
       return {
         canViewDashboard: true,
-        canManageBranches: true,
-        canManageInstallations: true,
+        canManageBranches: false,
+        canManageInstallations: false,
         canViewSensors: true,
         canViewSpecies: true,
         canViewProcesses: true,
         canManageUsers: true,
-        canAccessSettings: true,
+        canAccessSettings: false,
         canAccessSystemSettings: false,
-        canCreateData: true,
-        canEditData: true,
-        canDeleteData: true,
+        canCreateData: false,
+        canEditData: false,
+        canDeleteData: false,
         canExportData: true,
         canViewRealTimeData: true,
-        canManageAlerts: true,
+        canManageAlerts: false,
         canViewReports: true,
-        hasRestrictedAccess: false,
-        allowedBranches: [],
-        allowedFacilities: [],
+        hasRestrictedAccess: true,
+        allowedBranches: getBranchAccess(user),
+        allowedFacilities: getFacilityAccess(user),
       }
 
     case "standard":
+    case "operator":
+    case "manager":
+    case "viewer":
       return {
         canViewDashboard: true,
         canManageBranches: false,
@@ -126,7 +129,7 @@ export function useRolePermissions(): RolePermissions {
         canViewSpecies: true,
         canViewProcesses: true,
         canManageUsers: false,
-        canAccessSettings: true,
+        canAccessSettings: false,
         canAccessSystemSettings: false,
         canCreateData: false,
         canEditData: false,
@@ -167,13 +170,13 @@ export function useRolePermissions(): RolePermissions {
 
 // Helper function to check if user can access specific branch
 export function canAccessBranch(permissions: RolePermissions, branchId: string): boolean {
-  if (!permissions.hasRestrictedAccess) return true // Admin has access to all
+  if (!permissions.hasRestrictedAccess) return true
   return permissions.allowedBranches.includes(branchId)
 }
 
 // Helper function to check if user can access specific facility
 export function canAccessFacility(permissions: RolePermissions, facilityId: string, branchId?: string): boolean {
-  if (!permissions.hasRestrictedAccess) return true // Admin has access to all
+  if (!permissions.hasRestrictedAccess) return true
 
   // If user has specific facility access, check that
   if (permissions.allowedFacilities.length > 0) {

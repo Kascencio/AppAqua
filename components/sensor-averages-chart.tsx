@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { DateRange } from "react-day-picker"
 import { backendApi, type Promedio } from "@/lib/backend-client"
-import { useSensors } from "@/hooks/use-sensors"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
 type SensorAverageRow = {
   sensorId: number
@@ -53,7 +53,6 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 }
 
 export function SensorAveragesChart({ dateRange, sensors }: { dateRange: DateRange; sensors?: any[] }) {
-  const { sensors: hookSensors = [], loading: sensorsLoading, error: sensorsError } = useSensors()
   const [rows, setRows] = useState<SensorAverageRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,10 +63,10 @@ export function SensorAveragesChart({ dateRange, sensors }: { dateRange: DateRan
   const to = dateRange?.to
 
   const sensorsToQuery = useMemo(() => {
-    const source = sensors && sensors.length ? sensors : hookSensors
+    const source = Array.isArray(sensors) ? sensors : []
     // Evitar sobrecargar: por defecto solo primeros 20 sensores del filtro actual
     return (source || []).slice(0, 20)
-  }, [sensors, hookSensors])
+  }, [sensors])
 
   useEffect(() => {
     if (!from || !to) return
@@ -117,7 +116,11 @@ export function SensorAveragesChart({ dateRange, sensors }: { dateRange: DateRan
 
             return {
               sensorId,
-              name: String(s.name || s.sensor || `Sensor ${sensorId}`),
+              name: (() => {
+                const rawName = String(s.name || s.sensor || `Sensor ${sensorId}`)
+                const rawType = String(s.tipoMedida || s.tipo_medida || s.type || "").trim()
+                return rawType ? `${rawName} (${rawType})` : rawName
+              })(),
               unit: String(s.unit || ""),
               promedio: Number.isFinite(avg) ? avg : 0,
               muestras: Number.isFinite(muestras) ? muestras : 0,
@@ -142,8 +145,15 @@ export function SensorAveragesChart({ dateRange, sensors }: { dateRange: DateRan
     })()
   }, [from, to, sensorsToQuery])
 
-  const isInitialLoading = sensorsLoading || loading
-  const anyError = sensorsError || error
+  const chartConfig = {
+    promedio: {
+      label: "Promedio",
+      color: "#2563eb",
+    },
+  } satisfies ChartConfig
+
+  const isInitialLoading = loading
+  const anyError = error
 
   if (!from || !to) {
     return null
@@ -177,8 +187,7 @@ export function SensorAveragesChart({ dateRange, sensors }: { dateRange: DateRan
         ) : rows.length === 0 ? (
           <div className="h-40 flex items-center justify-center text-muted-foreground">Sin datos para el rango</div>
         ) : (
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <ChartContainer config={chartConfig} className="h-72">
               <BarChart data={rows} margin={{ left: 12, right: 12, top: 8, bottom: 32 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -190,25 +199,29 @@ export function SensorAveragesChart({ dateRange, sensors }: { dateRange: DateRan
                   tick={{ fontSize: 10 }}
                 />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip
-                  formatter={(value: any, _name: any, props: any) => {
-                    const row = props?.payload as SensorAverageRow
-                    const unit = row?.unit ? ` ${row.unit}` : ""
-                    return [`${Number(value).toFixed(2)}${unit}`, "Promedio"]
-                  }}
-                  labelFormatter={(label: any) => String(label)}
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(label) => String(label ?? "")}
+                      valueFormatter={(value, _name, item) => {
+                        const row = (item?.payload || {}) as SensorAverageRow
+                        const unit = row?.unit ? ` ${row.unit}` : ""
+                        return `${Number(value || 0).toFixed(2)}${unit}`
+                      }}
+                    />
+                  }
                 />
                 <Bar 
                   dataKey="promedio" 
-                  fill="#2563eb" 
+                  fill="var(--color-promedio)" 
                   radius={[4, 4, 0, 0]}
                   isAnimationActive={true}
                   animationDuration={500}
                   animationEasing="ease-out"
                 />
               </BarChart>
-            </ResponsiveContainer>
-          </div>
+          </ChartContainer>
         )}
       </CardContent>
     </Card>

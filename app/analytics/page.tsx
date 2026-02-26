@@ -4,10 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { BarChart3, TrendingUp, Download, Filter, Activity, Thermometer, Droplets, ArrowDown, ArrowUp, Clock, Wifi, WifiOff, Calendar } from "lucide-react"
 import { useAppContext } from "@/context/app-context"
+import { useAuth } from "@/context/auth-context"
 import { AnalyticsContent } from "@/components/analytics-content"
 import { DateRangePicker } from "@/components/date-range-picker"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { backendApi, type Lectura } from "@/lib/backend-client"
+import { useRolePermissions } from "@/hooks/use-role-permissions"
 import { useSensors } from "@/hooks/use-sensors"
 import { useToast } from "@/hooks/use-toast"
 import { SensorAveragesChart } from "@/components/sensor-averages-chart"
@@ -22,6 +24,47 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 type TimePreset = "today" | "7d" | "30d" | "thisWeek" | "thisMonth" | "custom"
 
+type OptionWithCount = {
+  value: string
+  count: number
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "Activo",
+  offline: "Desconectado",
+  inactive: "Inactivo",
+  maintenance: "Mantenimiento",
+  alert: "Alerta",
+}
+
+const STATUS_ORDER = ["active", "alert", "maintenance", "offline", "inactive"]
+
+function normalizeId(value: unknown): string {
+  return String(value ?? "").trim()
+}
+
+function escapeCsvCell(value: unknown): string {
+  return `"${String(value ?? "").replace(/"/g, "\"\"")}"`
+}
+
+function buildCsvContent(rows: Array<Array<unknown>>): string {
+  return rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(",")).join("\n")
+}
+
+function lecturaTimestamp(lectura: Lectura): string {
+  const tomadaEn = String(lectura.tomada_en || "").trim()
+  if (tomadaEn) return tomadaEn
+  const fecha = String(lectura.fecha || "").trim()
+  const hora = String(lectura.hora || "").trim()
+  if (fecha && hora) return `${fecha}T${hora}`
+  return fecha
+}
+
+function formatTimestampForExport(rawTimestamp: string): string {
+  const d = new Date(rawTimestamp)
+  return Number.isFinite(d.getTime()) ? format(d, "dd/MM/yyyy HH:mm:ss", { locale: es }) : rawTimestamp
+}
+
 export default function AnalyticsPage() {
   const context = useAppContext()
   const instalaciones = context?.instalaciones ?? []
@@ -31,6 +74,8 @@ export default function AnalyticsPage() {
   const contextLoading = context?.isLoading ?? false
 
   const { sensors } = useSensors()
+  const { user } = useAuth()
+  const { hasRestrictedAccess, allowedFacilities, allowedBranches } = useRolePermissions()
   const { toast } = useToast()
   const [summary, setSummary] = useState({
     totalLecturas: 0,
@@ -53,6 +98,7 @@ export default function AnalyticsPage() {
   const [selectedSensorType, setSelectedSensorType] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
   const [selectedInstallation, setSelectedInstallation] = useState("all")
+  const [summaryCoverage, setSummaryCoverage] = useState({ queried: 0, total: 0 })
 
   const normalizeKey = (value: string) => value.trim().toLowerCase()
   const getTipoMedidaFromSensor = (sensor: any): string => {
@@ -65,14 +111,89 @@ export default function AnalyticsPage() {
     return String(raw || "")
   }
 
-  const hasActiveFilters = useMemo(() => {
-    return selectedSensorType !== "all" || selectedStatus !== "all" || selectedInstallation !== "all"
-  }, [selectedSensorType, selectedStatus, selectedInstallation])
+  const getSensorFacilityId = (sensor: any): string => {
+    return normalizeId(sensor?.facilityId ?? sensor?.id_instalacion ?? sensor?.idInstalacion)
+  }
 
-  // Calcular sensores conectados (con lecturas recientes)
-  const activeSensors = useMemo(() => {
-    return sensors.filter((s: any) => s.status === "active")
-  }, [sensors])
+  const getSensorBranchId = (sensor: any): string => {
+    return normalizeId(sensor?.branchId ?? sensor?.id_sucursal ?? sensor?.idSucursal)
+  }
+
+  const matchesType = (sensor: any, typeValue: string) => {
+    if (typeValue === "all") return true
+    return normalizeKey(getTipoMedidaFromSensor(sensor)) === normalizeKey(typeValue)
+  }
+
+  const matchesStatus = (sensor: any, statusValue: string) => {
+    if (statusValue === "all") return true
+    return String(sensor?.status || "") === statusValue
+  }
+
+  const matchesInstallation = (sensor: any, installationValue: string) => {
+    if (installationValue === "all") return true
+    return normalizeKey(String(sensor?.facilityName || "")) === normalizeKey(installationValue)
+  }
+
+  const roleScopedSensors = useMemo(() => {
+    const source = Array.isArray(sensors) ? sensors : []
+    if (!hasRestrictedAccess) return source
+
+    const allowedFacilitiesSet = new Set((allowedFacilities || []).map((id) => normalizeId(id)).filter(Boolean))
+    const allowedBranchesSet = new Set((allowedBranches || []).map((id) => normalizeId(id)).filter(Boolean))
+    const hasExplicitScope = allowedFacilitiesSet.size > 0 || allowedBranchesSet.size > 0
+
+    if (!hasExplicitScope) {
+      // Sin alcance explícito: asumimos que el backend ya entrega datos permitidos.
+      return source
+    }
+
+    return source.filter((sensor: any) => {
+      const sensorFacilityId = getSensorFacilityId(sensor)
+      const sensorBranchId = getSensorBranchId(sensor)
+      if (sensorFacilityId && allowedFacilitiesSet.has(sensorFacilityId)) return true
+      if (sensorBranchId && allowedBranchesSet.has(sensorBranchId)) return true
+      return false
+    })
+  }, [sensors, hasRestrictedAccess, allowedFacilities, allowedBranches])
+
+  const visibleInstallationIds = useMemo(() => {
+    const ids = new Set<number>()
+    roleScopedSensors.forEach((sensor: any) => {
+      const value = Number(sensor?.id_instalacion ?? sensor?.facilityId ?? 0)
+      if (Number.isFinite(value) && value > 0) ids.add(value)
+    })
+    return ids
+  }, [roleScopedSensors])
+
+  const visibleFacilities = useMemo(() => {
+    if (!hasRestrictedAccess) return instalaciones
+    if (visibleInstallationIds.size === 0) return []
+    return instalaciones.filter((facility: any) => visibleInstallationIds.has(Number(facility?.id_instalacion || 0)))
+  }, [instalaciones, hasRestrictedAccess, visibleInstallationIds])
+
+  const visibleProcesses = useMemo(() => {
+    if (!hasRestrictedAccess) return procesos
+    if (visibleInstallationIds.size === 0) return []
+    return procesos.filter((process: any) => visibleInstallationIds.has(Number(process?.id_instalacion || 0)))
+  }, [procesos, hasRestrictedAccess, visibleInstallationIds])
+
+  const sensorsForTypeOptions = useMemo(() => {
+    return roleScopedSensors.filter((sensor: any) => {
+      return matchesStatus(sensor, selectedStatus) && matchesInstallation(sensor, selectedInstallation)
+    })
+  }, [roleScopedSensors, selectedStatus, selectedInstallation])
+
+  const sensorsForStatusOptions = useMemo(() => {
+    return roleScopedSensors.filter((sensor: any) => {
+      return matchesType(sensor, selectedSensorType) && matchesInstallation(sensor, selectedInstallation)
+    })
+  }, [roleScopedSensors, selectedSensorType, selectedInstallation])
+
+  const sensorsForInstallationOptions = useMemo(() => {
+    return roleScopedSensors.filter((sensor: any) => {
+      return matchesType(sensor, selectedSensorType) && matchesStatus(sensor, selectedStatus)
+    })
+  }, [roleScopedSensors, selectedSensorType, selectedStatus])
 
   const typeLabel = (type: string) => {
     switch (type) {
@@ -97,36 +218,108 @@ export default function AnalyticsPage() {
     }
   }
 
-  const availableTypes = useMemo(() => {
-    const map = new Map<string, string>()
-    sensors.forEach((s: any) => {
-      const raw = getTipoMedidaFromSensor(s)
+  const formatSensorTypeOption = (rawType: string) => {
+    const canonical = detectType("", rawType, "")
+    const canonicalLabel = typeLabel(canonical)
+    const cleaned = String(rawType || "").trim()
+    if (!cleaned) return canonicalLabel
+    return canonicalLabel.toLowerCase() === cleaned.toLowerCase()
+      ? canonicalLabel
+      : `${canonicalLabel} · ${cleaned}`
+  }
+
+  const availableTypeOptions = useMemo<OptionWithCount[]>(() => {
+    const byType = new Map<string, OptionWithCount>()
+    sensorsForTypeOptions.forEach((sensor: any) => {
+      const raw = getTipoMedidaFromSensor(sensor)
       const key = normalizeKey(raw)
       if (!key) return
-      if (!map.has(key)) map.set(key, raw)
+      const prev = byType.get(key)
+      if (!prev) {
+        byType.set(key, { value: raw, count: 1 })
+        return
+      }
+      prev.count += 1
     })
-    return Array.from(map.entries())
-      .sort((a, b) => a[1].localeCompare(b[1], "es"))
-      .map(([, raw]) => raw)
-  }, [sensors])
+    return Array.from(byType.values()).sort((a, b) => a.value.localeCompare(b.value, "es"))
+  }, [sensorsForTypeOptions])
 
-  const availableInstallations = useMemo(() => {
-    return Array.from(new Set(sensors.map((s: any) => s.facilityName).filter(Boolean))).sort()
-  }, [sensors])
+  const availableStatusOptions = useMemo<OptionWithCount[]>(() => {
+    const byStatus = new Map<string, OptionWithCount>()
+    sensorsForStatusOptions.forEach((sensor: any) => {
+      const status = String(sensor?.status || "")
+      if (!status) return
+      const prev = byStatus.get(status)
+      if (!prev) {
+        byStatus.set(status, { value: status, count: 1 })
+        return
+      }
+      prev.count += 1
+    })
+    return Array.from(byStatus.values()).sort((a, b) => {
+      const ai = STATUS_ORDER.indexOf(a.value)
+      const bi = STATUS_ORDER.indexOf(b.value)
+      const left = ai === -1 ? Number.MAX_SAFE_INTEGER : ai
+      const right = bi === -1 ? Number.MAX_SAFE_INTEGER : bi
+      return left - right || a.value.localeCompare(b.value)
+    })
+  }, [sensorsForStatusOptions])
+
+  const availableInstallationOptions = useMemo<OptionWithCount[]>(() => {
+    const byInstallation = new Map<string, OptionWithCount>()
+    sensorsForInstallationOptions.forEach((sensor: any) => {
+      const facilityName = String(sensor?.facilityName || "").trim()
+      if (!facilityName) return
+      const key = normalizeKey(facilityName)
+      const prev = byInstallation.get(key)
+      if (!prev) {
+        byInstallation.set(key, { value: facilityName, count: 1 })
+        return
+      }
+      prev.count += 1
+    })
+    return Array.from(byInstallation.values()).sort((a, b) => a.value.localeCompare(b.value, "es"))
+  }, [sensorsForInstallationOptions])
+
+  useEffect(() => {
+    if (selectedSensorType === "all") return
+    const exists = availableTypeOptions.some((option) => normalizeKey(option.value) === normalizeKey(selectedSensorType))
+    if (!exists) setSelectedSensorType("all")
+  }, [selectedSensorType, availableTypeOptions])
+
+  useEffect(() => {
+    if (selectedStatus === "all") return
+    const exists = availableStatusOptions.some((option) => option.value === selectedStatus)
+    if (!exists) setSelectedStatus("all")
+  }, [selectedStatus, availableStatusOptions])
+
+  useEffect(() => {
+    if (selectedInstallation === "all") return
+    const exists = availableInstallationOptions.some(
+      (option) => normalizeKey(option.value) === normalizeKey(selectedInstallation),
+    )
+    if (!exists) setSelectedInstallation("all")
+  }, [selectedInstallation, availableInstallationOptions])
 
   const filteredSensors = useMemo(() => {
-    return sensors.filter((s: any) => {
-      const rawTipo = getTipoMedidaFromSensor(s)
-      if (selectedSensorType !== "all" && normalizeKey(rawTipo) !== normalizeKey(selectedSensorType)) return false
-      if (selectedStatus !== "all" && s.status !== selectedStatus) return false
-      if (selectedInstallation !== "all" && s.facilityName !== selectedInstallation) return false
-      return true
+    return roleScopedSensors.filter((sensor: any) => {
+      return (
+        matchesType(sensor, selectedSensorType) &&
+        matchesStatus(sensor, selectedStatus) &&
+        matchesInstallation(sensor, selectedInstallation)
+      )
     })
-  }, [sensors, selectedSensorType, selectedStatus, selectedInstallation])
+  }, [roleScopedSensors, selectedSensorType, selectedStatus, selectedInstallation])
+
+  const hasActiveFilters = useMemo(() => {
+    return selectedSensorType !== "all" || selectedStatus !== "all" || selectedInstallation !== "all"
+  }, [selectedSensorType, selectedStatus, selectedInstallation])
 
   const connectedSensors = useMemo(() => {
-    return sensors.filter((s: any) => s.status === "active" || s.lastReading !== undefined).length
-  }, [sensors])
+    return roleScopedSensors.filter((sensor: any) => sensor.status === "active" || sensor.lastReading !== undefined).length
+  }, [roleScopedSensors])
+
+  const hiddenSensorsByPermissions = Math.max(0, sensors.length - roleScopedSensors.length)
 
   // Función para calcular rango de fechas basado en preset
   const getPresetDateRange = useCallback((preset: TimePreset): DateRange => {
@@ -135,15 +328,18 @@ export default function AnalyticsPage() {
       case "today":
         return { from: startOfToday(), to: endOfToday() }
       case "7d":
-        return { from: subDays(now, 7), to: now }
+        return { from: startOfDay(subDays(now, 6)), to: endOfDay(now) }
       case "30d":
-        return { from: subDays(now, 30), to: now }
+        return { from: startOfDay(subDays(now, 29)), to: endOfDay(now) }
       case "thisWeek":
-        return { from: startOfWeek(now, { locale: es }), to: endOfWeek(now, { locale: es }) }
+        return {
+          from: startOfDay(startOfWeek(now, { locale: es })),
+          to: endOfDay(endOfWeek(now, { locale: es })),
+        }
       case "thisMonth":
-        return { from: startOfMonth(now), to: endOfMonth(now) }
+        return { from: startOfDay(startOfMonth(now)), to: endOfDay(endOfMonth(now)) }
       default:
-        return { from: subDays(now, 30), to: now }
+        return { from: startOfDay(subDays(now, 29)), to: endOfDay(now) }
     }
   }, [])
 
@@ -159,7 +355,10 @@ export default function AnalyticsPage() {
 
   // Handler para cambiar rango personalizado
   const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange(range)
+    setDateRange({
+      from: range.from ? startOfDay(range.from) : undefined,
+      to: range.to ? endOfDay(range.to) : undefined,
+    })
     setTimePreset("custom")
   }, [])
 
@@ -292,17 +491,25 @@ export default function AnalyticsPage() {
     setIsExporting(true)
     setExportProgress({ done: 0, total: 0 })
     try {
+      if (!dateRange.from || !dateRange.to) {
+        toast({
+          title: "Período incompleto",
+          description: "Selecciona una fecha o rango válido antes de exportar.",
+          variant: "destructive",
+        })
+        return
+      }
+
       const desde = dateRange.from?.toISOString()
       const hasta = dateRange.to?.toISOString()
 
-      const sensorsSource = hasActiveFilters ? filteredSensors : sensors
+      const sensorsSource = filteredSensors
       if (!sensorsSource || sensorsSource.length === 0) {
         toast({
           title: "Sin sensores",
           description: "No hay sensores para exportar datos.",
           variant: "destructive",
         })
-        setIsExporting(false)
         return
       }
 
@@ -312,22 +519,53 @@ export default function AnalyticsPage() {
       })
 
       // Formatear fechas para el nombre del archivo
-      const fromDate = dateRange.from ? format(dateRange.from, 'yyyy-MM-dd') : 'inicio'
-      const toDate = dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : 'fin'
-
-      const sensorMetaById = new Map<number, { name: string; unit: string; facilityName: string }>(
-        (sensorsSource || []).map((s: any) => [
-          Number(s.id_sensor_instalado),
-          {
-            name: String(s.name || `Sensor ${s.id_sensor_instalado}`),
-            unit: String(s.unit || ""),
-            facilityName: String(s.facilityName || ""),
-          },
-        ]),
-      )
+      const fromDate = format(dateRange.from, "yyyy-MM-dd")
+      const toDate = format(dateRange.to, "yyyy-MM-dd")
 
       // Obtener lecturas completas SOLO al exportar (por fechas)
       const sensorsToQuery = exportScope === "all" ? sensorsSource : sensorsSource.slice(0, 20)
+      const generatedAt = new Date().toISOString()
+      const scopeLabel = exportScope === "all" ? "todos" : "top20"
+      const filtroTipo = selectedSensorType === "all" ? "todos" : selectedSensorType
+      const filtroEstado = selectedStatus === "all" ? "todos" : STATUS_LABELS[selectedStatus] || selectedStatus
+      const filtroInstalacion = selectedInstallation === "all" ? "todas" : selectedInstallation
+      const userLabel = user?.name || user?.email || "usuario-no-disponible"
+
+      const sensorMetaById = new Map<
+        number,
+        {
+          sensorId: number
+          sensorName: string
+          sensorTypeRaw: string
+          sensorTypeCanonical: string
+          sensorStatus: string
+          sensorUnit: string
+          branchId: string
+          branchName: string
+          facilityId: string
+          facilityName: string
+        }
+      >(
+        sensorsToQuery.map((sensor: any) => {
+          const sensorId = Number(sensor?.id_sensor_instalado || 0)
+          const sensorTypeRaw = getTipoMedidaFromSensor(sensor)
+          return [
+            sensorId,
+            {
+              sensorId,
+              sensorName: String(sensor?.name || `Sensor ${sensorId}`),
+              sensorTypeRaw,
+              sensorTypeCanonical: detectType(String(sensor?.name || ""), sensorTypeRaw, String(sensor?.unit || "")),
+              sensorStatus: String(sensor?.status || ""),
+              sensorUnit: String(sensor?.unit || ""),
+              branchId: normalizeId(sensor?.branchId),
+              branchName: String(sensor?.branchName || ""),
+              facilityId: normalizeId(sensor?.id_instalacion ?? sensor?.facilityId),
+              facilityName: String(sensor?.facilityName || ""),
+            },
+          ]
+        }),
+      )
 
       const allBySensor = await mapWithConcurrencyProgress(
         sensorsToQuery,
@@ -351,72 +589,162 @@ export default function AnalyticsPage() {
 
       // Generar contenido según formato
       if (exportFormat === "json") {
-        const jsonContent = JSON.stringify({
-          meta: {
-            desde: dateRange.from?.toISOString(),
-            hasta: dateRange.to?.toISOString(),
-            totalLecturas: lecturas.length,
-            generado: new Date().toISOString(),
+        const jsonContent = JSON.stringify(
+          {
+            meta: {
+              desde,
+              hasta,
+              generadoEn: generatedAt,
+              usuario: userLabel,
+              totalSensoresConsiderados: sensorsToQuery.length,
+              totalLecturas: lecturas.length,
+              alcance: scopeLabel,
+            },
+            filtros: {
+              tipo: filtroTipo,
+              estado: filtroEstado,
+              instalacion: filtroInstalacion,
+            },
+            sensores: Array.from(sensorMetaById.values()),
+            lecturas: lecturas.map((lectura) => {
+              const sensorId = Number(lectura.id_sensor_instalado || lectura.sensor_instalado_id || 0)
+              const meta = sensorMetaById.get(sensorId)
+              const timestamp = lecturaTimestamp(lectura)
+              return {
+                lecturaId: Number(lectura.id_lectura || 0),
+                sensorId,
+                sensorName: meta?.sensorName || `Sensor ${sensorId}`,
+                instalacion: meta?.facilityName || "",
+                tipoMedida: lectura.tipo_medida || meta?.sensorTypeRaw || "",
+                tipoCanonico: detectType(
+                  String(meta?.sensorName || ""),
+                  String(lectura.tipo_medida || meta?.sensorTypeRaw || ""),
+                  String(meta?.sensorUnit || ""),
+                ),
+                valor: lectura.valor,
+                unidad: meta?.sensorUnit || "",
+                timestamp,
+                timestampLocal: formatTimestampForExport(timestamp),
+              }
+            }),
           },
-          lecturas: lecturas.map((l) => {
-            const sid = Number(l.id_sensor_instalado || l.sensor_instalado_id || 0)
-            const meta = sensorMetaById.get(sid)
-            return {
-              sensorId: sid,
-              sensorName: meta?.name || "",
-              instalacion: meta?.facilityName || "",
-              tipoMedida: l.tipo_medida || "",
-              valor: l.valor,
-              unidad: meta?.unit || "",
-              timestamp: l.tomada_en || `${l.fecha} ${l.hora}` || "",
-            }
-          }),
-        }, null, 2)
-        
+          null,
+          2,
+        )
+
         const blob = new Blob([jsonContent], { type: "application/json" })
         const link = document.createElement("a")
-        link.href = URL.createObjectURL(blob)
+        const href = URL.createObjectURL(blob)
+        link.href = href
         link.download = `analytics-${fromDate}_${toDate}.json`
         link.click()
+        URL.revokeObjectURL(href)
       } else {
-        // Generar CSV de las lecturas
-        const headers = ['Sensor ID', 'Sensor', 'Instalación', 'Tipo Medida', 'Valor', 'Unidad', 'Fecha/Hora']
-        const rows = lecturas.map((l) => {
-          const sid = Number(l.id_sensor_instalado || l.sensor_instalado_id || 0)
-          const meta = sensorMetaById.get(sid)
-          return [
-            sid || '',
-            meta?.name || '',
-            meta?.facilityName || '',
-            l.tipo_medida || '',
-            l.valor,
-            meta?.unit || '',
-            l.tomada_en || `${l.fecha} ${l.hora}` || '',
-          ]
-        })
-        
-        const csvContent = [
-          `# Reporte de Análisis - ${format(dateRange.from || new Date(), 'dd/MM/yyyy', { locale: es })} al ${format(dateRange.to || new Date(), 'dd/MM/yyyy', { locale: es })}`,
-          `# Total de lecturas: ${lecturas.length}`,
-          '',
-          headers.join(','),
-          ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-        ].join('\n')
-        
-        // Descargar archivo
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-        const link = document.createElement('a')
-        link.href = URL.createObjectURL(blob)
+        const headers = [
+          "periodo_desde",
+          "periodo_hasta",
+          "generado_en",
+          "usuario",
+          "alcance_exportacion",
+          "filtro_tipo_sensor",
+          "filtro_estado_sensor",
+          "filtro_instalacion",
+          "sensor_id",
+          "sensor",
+          "tipo_medida",
+          "tipo_canonico",
+          "estado_sensor",
+          "unidad",
+          "sucursal_id",
+          "sucursal",
+          "instalacion_id",
+          "instalacion",
+          "lectura_id",
+          "timestamp",
+          "timestamp_local",
+          "valor",
+        ]
+
+        const baseColumns = [
+          desde || "",
+          hasta || "",
+          generatedAt,
+          userLabel,
+          scopeLabel,
+          filtroTipo,
+          filtroEstado,
+          filtroInstalacion,
+        ]
+
+        const dataRows =
+          lecturas.length > 0
+            ? lecturas.map((lectura) => {
+                const sensorId = Number(lectura.id_sensor_instalado || lectura.sensor_instalado_id || 0)
+                const meta = sensorMetaById.get(sensorId)
+                const timestamp = lecturaTimestamp(lectura)
+                const sensorTypeRaw = String(lectura.tipo_medida || meta?.sensorTypeRaw || "")
+                const canonicalType = detectType(
+                  String(meta?.sensorName || ""),
+                  sensorTypeRaw,
+                  String(meta?.sensorUnit || ""),
+                )
+
+                return [
+                  ...baseColumns,
+                  sensorId,
+                  meta?.sensorName || `Sensor ${sensorId}`,
+                  sensorTypeRaw,
+                  canonicalType,
+                  STATUS_LABELS[String(meta?.sensorStatus || "")] || meta?.sensorStatus || "",
+                  meta?.sensorUnit || "",
+                  meta?.branchId || "",
+                  meta?.branchName || "",
+                  meta?.facilityId || "",
+                  meta?.facilityName || "",
+                  Number(lectura.id_lectura || 0),
+                  timestamp,
+                  formatTimestampForExport(timestamp),
+                  Number(lectura.valor ?? 0),
+                ]
+              })
+            : sensorsToQuery.map((sensor: any) => {
+                const sensorId = Number(sensor?.id_sensor_instalado || 0)
+                const meta = sensorMetaById.get(sensorId)
+                return [
+                  ...baseColumns,
+                  sensorId,
+                  meta?.sensorName || `Sensor ${sensorId}`,
+                  meta?.sensorTypeRaw || "",
+                  meta?.sensorTypeCanonical || "",
+                  STATUS_LABELS[String(meta?.sensorStatus || "")] || meta?.sensorStatus || "",
+                  meta?.sensorUnit || "",
+                  meta?.branchId || "",
+                  meta?.branchName || "",
+                  meta?.facilityId || "",
+                  meta?.facilityName || "",
+                  "",
+                  "",
+                  "",
+                  "",
+                ]
+              })
+
+        const csvContent = buildCsvContent([headers, ...dataRows])
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+        const link = document.createElement("a")
+        const href = URL.createObjectURL(blob)
+        link.href = href
         link.download = `analytics-${fromDate}_${toDate}.csv`
         link.click()
+        URL.revokeObjectURL(href)
       }
-      
+
       toast({
         title: "Exportación exitosa",
-        description: `Se exportaron ${lecturas.length} registros del período ${format(dateRange.from || new Date(), 'dd/MM/yyyy', { locale: es })} - ${format(dateRange.to || new Date(), 'dd/MM/yyyy', { locale: es })}.`,
+        description: `Se exportaron ${lecturas.length} lecturas para ${sensorsToQuery.length} sensores en el período ${format(dateRange.from, "dd/MM/yyyy", { locale: es })} - ${format(dateRange.to, "dd/MM/yyyy", { locale: es })}.`,
       })
     } catch (error) {
-      console.error('Error exporting:', error)
+      console.error("Error exporting:", error)
       toast({
         title: "Error al exportar",
         description: "No se pudo exportar los datos. Intente de nuevo.",
@@ -425,7 +753,19 @@ export default function AnalyticsPage() {
     } finally {
       setIsExporting(false)
     }
-  }, [toast, dateRange, sensors, filteredSensors, hasActiveFilters, exportScope, exportFormat])
+  }, [
+    dateRange.from,
+    dateRange.to,
+    filteredSensors,
+    exportScope,
+    exportFormat,
+    selectedSensorType,
+    selectedStatus,
+    selectedInstallation,
+    toast,
+    user?.email,
+    user?.name,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -443,65 +783,32 @@ export default function AnalyticsPage() {
         const desde = dateRange.from.toISOString()
         const hasta = dateRange.to.toISOString()
 
-        const sensorsSource = hasActiveFilters ? filteredSensors : sensors
+        const sensorsSource = filteredSensors
         if (!sensorsSource || sensorsSource.length === 0) {
           if (!cancelled) {
-            setPrevSummary(summary)
+            setPrevSummary(summaryRef.current)
             setSummary({ totalLecturas: 0, lecturasHoy: 0, promedioTemperatura: 0, promedioPH: 0, promedioOxigeno: 0 })
+            setSummaryCoverage({ queried: 0, total: 0 })
             hasInitialData.current = true
           }
           return
         }
 
-        const sensorsToQuery = sensorsSource
+        const MAX_SUMMARY_SENSORS = 24
+        const sensorsToQuery = sensorsSource.slice(0, MAX_SUMMARY_SENSORS)
+        const coverageFactor = sensorsToQuery.length > 0 ? sensorsSource.length / sensorsToQuery.length : 1
+        if (!cancelled) {
+          setSummaryCoverage({ queried: sensorsToQuery.length, total: sensorsSource.length })
+        }
         const bucketMinutes = computeBucketMinutes(dateRange.from, dateRange.to, 100)
-
-        // 1) Totales usando pagination.total (rápido) - reducir concurrencia a 3
-        const totals = await mapWithConcurrency(
-          sensorsToQuery,
-          3,
-          async (s: any) => {
-            const id = Number(s.id_sensor_instalado)
-            if (!id) return 0
-            try {
-              const resp = await backendApi.getLecturas({ sensorInstaladoId: id, page: 1, limit: 1, desde, hasta })
-              const payload: any = resp
-              return Number(payload?.pagination?.total || 0)
-            } catch {
-              return 0
-            }
-          },
-        )
-        const totalLecturas = totals.reduce((a, b) => a + b, 0)
-
-        // 2) Lecturas de hoy (solo si el rango incluye hoy)
         const today = new Date()
         const todayStart = startOfDay(today)
         const todayEnd = endOfDay(today)
         const rangeIncludesToday = dateRange.from <= todayEnd && dateRange.to >= todayStart
-        let lecturasHoy = 0
-        if (rangeIncludesToday) {
-          const desdeHoy = todayStart.toISOString()
-          const hastaHoy = todayEnd.toISOString()
-          const todays = await mapWithConcurrency(
-            sensorsToQuery,
-            3,
-            async (s: any) => {
-              const id = Number(s.id_sensor_instalado)
-              if (!id) return 0
-              try {
-                const resp = await backendApi.getLecturas({ sensorInstaladoId: id, page: 1, limit: 1, desde: desdeHoy, hasta: hastaHoy })
-                const payload: any = resp
-                return Number(payload?.pagination?.total || 0)
-              } catch {
-                return 0
-              }
-            },
-          )
-          lecturasHoy = todays.reduce((a, b) => a + b, 0)
-        }
+        const todayStartMs = todayStart.getTime()
+        const todayEndMs = todayEnd.getTime()
 
-        // 3) Promedios por tipo (usando /promedios por sensor) - reducir concurrencia
+        // Una sola consulta por sensor para resumen, promedios y conteos aproximados de lecturas.
         const promediosBySensor = await mapWithConcurrency(
           sensorsToQuery,
           3,
@@ -532,6 +839,26 @@ export default function AnalyticsPage() {
             }
           },
         )
+
+        let totalLecturasMuestra = 0
+        let lecturasHoyMuestra = 0
+        for (const item of promediosBySensor) {
+          for (const p of item.promedios || []) {
+            const muestrasRaw = Number((p as any).muestras)
+            const muestras = Number.isFinite(muestrasRaw) && muestrasRaw > 0 ? muestrasRaw : 1
+            totalLecturasMuestra += muestras
+
+            if (rangeIncludesToday) {
+              const t = new Date((p as any).timestamp).getTime()
+              if (Number.isFinite(t) && t >= todayStartMs && t <= todayEndMs) {
+                lecturasHoyMuestra += muestras
+              }
+            }
+          }
+        }
+
+        const totalLecturas = Math.round(totalLecturasMuestra * coverageFactor)
+        const lecturasHoy = rangeIncludesToday ? Math.round(lecturasHoyMuestra * coverageFactor) : 0
 
         const weighted = (arr: any[]): { avg: number; muestras: number } => {
           const rows = (arr || []).filter(Boolean)
@@ -582,23 +909,38 @@ export default function AnalyticsPage() {
       clearTimeout(id)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange.from, dateRange.to, sensors, filteredSensors, hasActiveFilters])
+  }, [dateRange.from, dateRange.to, filteredSensors])
 
   // Mantener variables por compatibilidad futura; evitamos bloquear UI.
   void contextLoading
 
   // Calcular métricas de análisis
+  const scopedAlertsFromSensors = filteredSensors.filter((sensor: any) => sensor.status === "alert").length
   const analytics = {
     totalLecturas: summary.totalLecturas,
     lecturasHoy: summary.lecturasHoy,
     promedioTemperatura: summary.promedioTemperatura,
     promedioPH: summary.promedioPH,
     promedioOxigeno: summary.promedioOxigeno,
-    sensoresSeleccionados: (filteredSensors.length ? filteredSensors : sensors).length,
-    alertasActivas: typeof stats?.alertas_activas === "number" ? stats.alertas_activas : (Array.isArray(alerts) ? alerts.length : 0),
-    instalacionesTotales: typeof stats?.total_instalaciones === "number" ? stats.total_instalaciones : instalaciones.length,
-    instalacionesActivas: typeof stats?.instalaciones_activas === "number" ? stats.instalaciones_activas : instalaciones.filter((i: any) => i.estado_operativo === "activo").length,
-    procesosTotales: Array.isArray(procesos) ? procesos.length : 0,
+    sensoresSeleccionados: filteredSensors.length,
+    alertasActivas: hasRestrictedAccess
+      ? scopedAlertsFromSensors
+      : typeof stats?.alertas_activas === "number"
+        ? stats.alertas_activas
+        : Array.isArray(alerts)
+          ? alerts.length
+          : 0,
+    instalacionesTotales: hasRestrictedAccess
+      ? visibleFacilities.length
+      : typeof stats?.total_instalaciones === "number"
+        ? stats.total_instalaciones
+        : instalaciones.length,
+    instalacionesActivas: hasRestrictedAccess
+      ? visibleFacilities.filter((facility: any) => facility.estado_operativo === "activo").length
+      : typeof stats?.instalaciones_activas === "number"
+        ? stats.instalaciones_activas
+        : instalaciones.filter((facility: any) => facility.estado_operativo === "activo").length,
+    procesosTotales: Array.isArray(visibleProcesses) ? visibleProcesses.length : 0,
   }
 
   const delta = {
@@ -624,12 +966,22 @@ export default function AnalyticsPage() {
                   <WifiOff className="h-3.5 w-3.5 text-gray-400" />
                 )}
                 <span className="text-xs text-muted-foreground">
-                  {connectedSensors}/{sensors.length} sensores
+                  {connectedSensors}/{roleScopedSensors.length} sensores
                 </span>
               </div>
+              {hiddenSensorsByPermissions > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  Acceso aplicado: {hiddenSensorsByPermissions} sensores ocultos por permisos
+                </span>
+              )}
+              {summaryCoverage.total > 0 && summaryCoverage.total > summaryCoverage.queried && (
+                <span className="text-[11px] text-muted-foreground">
+                  Resumen rápido: {summaryCoverage.queried}/{summaryCoverage.total} sensores
+                </span>
+              )}
             </div>
           </div>
-          {isRefreshing && (
+          {(isRefreshing || isLoadingSummary) && (
             <span className="text-sm text-muted-foreground animate-pulse">Actualizando...</span>
           )}
         </div>
@@ -699,7 +1051,9 @@ export default function AnalyticsPage() {
         <Card className="border-dashed">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Filtros avanzados</CardTitle>
-            <CardDescription>Filtra por tipo, estado e instalación según los sensores actuales.</CardDescription>
+            <CardDescription>
+              Opciones dinámicas según sensores disponibles para tu usuario y el cruce actual de filtros.
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-3">
             <Select value={selectedSensorType} onValueChange={setSelectedSensorType}>
@@ -708,9 +1062,9 @@ export default function AnalyticsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los tipos</SelectItem>
-                {availableTypes.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
+                {availableTypeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {formatSensorTypeOption(option.value)} ({option.count})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -722,11 +1076,11 @@ export default function AnalyticsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="active">Activo</SelectItem>
-                <SelectItem value="offline">Desconectado</SelectItem>
-                <SelectItem value="inactive">Inactivo</SelectItem>
-                <SelectItem value="maintenance">Mantenimiento</SelectItem>
-                <SelectItem value="alert">Alerta</SelectItem>
+                {availableStatusOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {(STATUS_LABELS[option.value] || option.value)} ({option.count})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -736,13 +1090,30 @@ export default function AnalyticsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas las instalaciones</SelectItem>
-                {availableInstallations.map((inst) => (
-                  <SelectItem key={inst} value={inst}>
-                    {inst}
+                {availableInstallationOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.value} ({option.count})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <div className="md:col-span-3 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setSelectedSensorType("all")
+                  setSelectedStatus("all")
+                  setSelectedInstallation("all")
+                }}
+                disabled={!hasActiveFilters}
+              >
+                Limpiar filtros
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Sensores visibles: {filteredSensors.length}/{roleScopedSensors.length}
+              </span>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -913,7 +1284,12 @@ export default function AnalyticsPage() {
             <CardDescription>Gráficos y tendencias de los parámetros de calidad del agua</CardDescription>
           </CardHeader>
           <CardContent>
-            <AnalyticsContent dateRange={dateRange} sensors={filteredSensors} />
+            <AnalyticsContent
+              dateRange={dateRange}
+              sensors={filteredSensors}
+              processes={visibleProcesses}
+              facilities={visibleFacilities}
+            />
           </CardContent>
         </Card>
       </div>

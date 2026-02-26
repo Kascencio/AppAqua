@@ -30,6 +30,8 @@ export interface EmpresaSucursal {
   calle: string // VARCHAR(100) NOT NULL
   numero_int_ext?: string | null // VARCHAR(10) NULL
   referencia?: string | null // VARCHAR(100) NULL
+  latitud?: number | null
+  longitud?: number | null
 }
 
 // Tabla: instalacion
@@ -37,10 +39,21 @@ export interface Instalacion {
   id_instalacion: number
   id_empresa_sucursal: number // FK NOT NULL
   nombre_instalacion: string // VARCHAR(100) NOT NULL
+  codigo_instalacion?: string
   fecha_instalacion: string // DATE NOT NULL (ISO string format)
   estado_operativo: "activo" | "inactivo" // ENUM NOT NULL
   descripcion: string // VARCHAR(200) NOT NULL
   tipo_uso: "acuicultura" | "tratamiento" | "otros" | string // ENUM NOT NULL
+  ubicacion?: string
+  latitud?: number | null
+  longitud?: number | null
+  capacidad_maxima?: number | null
+  capacidad_actual?: number | null
+  volumen_agua_m3?: number | null
+  profundidad_m?: number | null
+  fecha_ultima_inspeccion?: string | null
+  responsable_operativo?: string | null
+  contacto_emergencia?: string | null
   id_proceso: number // FK NOT NULL
   // Extended fields for views
   nombre_empresa?: string
@@ -126,7 +139,10 @@ export interface Alerta {
   dato_puntual: number // DECIMAL(10,2) NOT NULL
   // UI fields
   read?: boolean
+  leida?: boolean
   fecha?: string
+  fecha_alerta?: string
+  fecha_lectura?: string | null
   tipo_alerta?: string
   estado_alerta?: string
   title?: string

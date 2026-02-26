@@ -39,7 +39,7 @@ export function ParameterRangeDisplay({ parametros, parameters }: ParameterRange
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 min-w-0">
       {parametros.map((param) => {
         const parameterInfo = getParameterInfo(param.id_parametro)
 
@@ -53,14 +53,14 @@ export function ParameterRangeDisplay({ parametros, parameters }: ParameterRange
         }
 
         return (
-          <div key={param.id_parametro} className="flex items-center gap-2 text-sm">
-            <Badge variant="outline" className="text-xs font-medium">
+          <div key={param.id_parametro} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+            <Badge variant="outline" className="max-w-full text-xs font-medium break-words whitespace-normal">
               {parameterInfo.nombre_parametro}
             </Badge>
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground break-words">
               {formatValue(param.Rmin)} – {formatValue(param.Rmax)}
             </span>
-            <span className="text-xs text-muted-foreground">{parameterInfo.unidad_medida}</span>
+            <span className="text-xs text-muted-foreground break-words">{parameterInfo.unidad_medida}</span>
           </div>
         )
       })}

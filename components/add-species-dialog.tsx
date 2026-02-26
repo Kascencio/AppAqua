@@ -21,7 +21,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Plus, Trash2, Loader2, Fish } from "lucide-react"
 import { useSpecies } from "@/hooks/use-species"
 import type { EspecieCreate } from "@/types/especie"
-import type { EspecieParametroCreate } from "@/types/especie-parametro"
 import { toast } from "sonner"
 
 interface AddSpeciesDialogProps {
@@ -131,18 +130,11 @@ export function AddSpeciesDialog({ open, onOpenChange, onSuccess }: AddSpeciesDi
     try {
       setSubmitting(true)
 
-      // Crear la especie con sus parámetros
-      const especieParametros: EspecieParametroCreate[] = parameterConfigs.map((config) => ({
-        id_especie: 0, // Se asignará automáticamente
-        id_parametro: config.id_parametro,
-        Rmin: config.Rmin,
-        Rmax: config.Rmax,
-      }))
-
       await createSpecies({
         nombre: formData.nombre,
         nombre_cientifico: formData.nombre_cientifico,
         tipo_cultivo: formData.tipo_cultivo,
+        descripcion: formData.descripcion,
         estado: formData.estado,
         parametros: parameterConfigs.map((c) => ({
           id_parametro: c.id_parametro,
@@ -164,7 +156,7 @@ export function AddSpeciesDialog({ open, onOpenChange, onSuccess }: AddSpeciesDi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto px-4 sm:px-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Fish className="h-5 w-5 text-cyan-600" />
@@ -182,7 +174,7 @@ export function AddSpeciesDialog({ open, onOpenChange, onSuccess }: AddSpeciesDi
               <CardTitle className="text-lg">Información Básica</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="nombre_comun">
                     Nombre Común <span className="text-red-500">*</span>
@@ -267,7 +259,9 @@ export function AddSpeciesDialog({ open, onOpenChange, onSuccess }: AddSpeciesDi
                     <SelectValue placeholder="Seleccione" />
                   </SelectTrigger>
                   <SelectContent>
-                    {parameters.map((p) => (
+                    {parameters
+                      .filter((p) => !parameterConfigs.some((config) => config.id_parametro === p.id_parametro))
+                      .map((p) => (
                       <SelectItem key={p.id_parametro} value={String(p.id_parametro)}>
                         {p.nombre_parametro} {p.unidad_medida ? `(${p.unidad_medida})` : ""}
                       </SelectItem>
@@ -305,11 +299,11 @@ export function AddSpeciesDialog({ open, onOpenChange, onSuccess }: AddSpeciesDi
               ) : (
                 <div className="space-y-4">
                   {parameterConfigs.map((config) => (
-                    <div key={config.id_parametro} className="border rounded-lg p-4 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                    <div key={config.id_parametro} className="border rounded-lg p-4 space-y-4 overflow-hidden">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2 flex-wrap">
                           <Badge variant="outline">{getParameterName(config.id_parametro)}</Badge>
-                          <span className="text-sm text-muted-foreground">
+                          <span className="text-sm text-muted-foreground break-words">
                             {config.Rmin} – {config.Rmax} {getParameterUnit(config.id_parametro)}
                           </span>
                         </div>

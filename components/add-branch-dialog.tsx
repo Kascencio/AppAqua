@@ -33,6 +33,8 @@ export default function AddBranchDialog({ open, onOpenChange, onAddBranch }: Add
   const [calle, setCalle] = useState("")
   const [numeroIntExt, setNumeroIntExt] = useState("")
   const [referencia, setReferencia] = useState("")
+  const [latitud, setLatitud] = useState("")
+  const [longitud, setLongitud] = useState("")
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,6 +53,8 @@ export default function AddBranchDialog({ open, onOpenChange, onAddBranch }: Add
       calle,
       numero_int_ext: numeroIntExt || null,
       referencia: referencia || null,
+      latitud: latitud ? Number(latitud) : null,
+      longitud: longitud ? Number(longitud) : null,
     }
 
     onAddBranch(newBranch)
@@ -63,6 +67,8 @@ export default function AddBranchDialog({ open, onOpenChange, onAddBranch }: Add
     setCalle("")
     setNumeroIntExt("")
     setReferencia("")
+    setLatitud("")
+    setLongitud("")
     onOpenChange(false)
   }
 
@@ -161,6 +167,32 @@ export default function AddBranchDialog({ open, onOpenChange, onAddBranch }: Add
               placeholder="Ej: Frente al parque central"
               rows={3}
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="add-latitud">Latitud</Label>
+              <Input
+                id="add-latitud"
+                type="number"
+                step="0.0000001"
+                value={latitud}
+                onChange={(e) => setLatitud(e.target.value)}
+                placeholder="17.9869000"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="add-longitud">Longitud</Label>
+              <Input
+                id="add-longitud"
+                type="number"
+                step="0.0000001"
+                value={longitud}
+                onChange={(e) => setLongitud(e.target.value)}
+                placeholder="-92.9303000"
+              />
+            </div>
           </div>
 
           <DialogFooter>

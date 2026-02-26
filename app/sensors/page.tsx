@@ -441,7 +441,7 @@ const SensorRow = ({
 
   return (
     <div
-      className={`flex items-center gap-4 p-3 ml-12 rounded-lg border shadow-sm hover:shadow-md transition-all duration-300 ${statusInfo.bgColor}`}
+      className={`flex items-center gap-3 p-3 rounded-xl border shadow-sm hover:shadow-md transition-all duration-300 ${statusInfo.bgColor}`}
     >
       {/* Sensor info */}
       <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -508,6 +508,17 @@ const SensorRow = ({
 }
 
 // Hierarchical Organization Component for all view modes
+const summarizeSensorStatus = (sensorList: any[]) => {
+  const total = sensorList.length
+  const active = sensorList.filter((sensor) => sensor.status === "active").length
+  const alert = sensorList.filter((sensor) => sensor.status === "alert").length
+  const offline = sensorList.filter((sensor) => sensor.status === "offline").length
+  const maintenance = sensorList.filter((sensor) => sensor.status === "maintenance").length
+  const inactive = sensorList.filter((sensor) => sensor.status === "inactive").length
+
+  return { total, active, alert, offline, maintenance, inactive }
+}
+
 const HierarchicalOrganization = ({
   organizedData,
   viewMode,
@@ -555,165 +566,254 @@ const HierarchicalOrganization = ({
     setExpandedInstallations(newExpanded)
   }
 
+  const hierarchySummary = useMemo(() => {
+    let branches = 0
+    let installations = 0
+    const sensorList: any[] = []
+
+    Object.values(organizedData).forEach((companyData: any) => {
+      const branchValues = Object.values(companyData.branches || {})
+      branches += branchValues.length
+      branchValues.forEach((branchData: any) => {
+        const installationValues = Object.values(branchData.installations || {})
+        installations += installationValues.length
+        installationValues.forEach((installationData: any) => {
+          sensorList.push(...(installationData.sensors || []))
+        })
+      })
+    })
+
+    return {
+      companies: Object.keys(organizedData).length,
+      branches,
+      installations,
+      ...summarizeSensorStatus(sensorList),
+    }
+  }, [organizedData])
+
   return (
     <div className="space-y-4">
+      <div className="rounded-xl border border-dashed border-slate-300/70 bg-slate-50/60 dark:bg-slate-900/20 p-4">
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">Agrupación actual</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">Empresas: {hierarchySummary.companies}</Badge>
+          <Badge variant="outline">Sucursales: {hierarchySummary.branches}</Badge>
+          <Badge variant="outline">Instalaciones: {hierarchySummary.installations}</Badge>
+          <Badge variant="outline">Sensores: {hierarchySummary.total}</Badge>
+          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-emerald-200">
+            Activos: {hierarchySummary.active}
+          </Badge>
+          {(hierarchySummary.alert > 0 || hierarchySummary.offline > 0) && (
+            <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200">
+              Atención: {hierarchySummary.alert + hierarchySummary.offline}
+            </Badge>
+          )}
+        </div>
+      </div>
+
       {Object.entries(organizedData).map(([companyName, companyData]: [string, any]) => {
         const isCompanyExpanded = expandedCompanies.has(companyName)
-        const totalSensors = Object.values(companyData.branches).reduce(
-          (total: number, branch: any) =>
-            total +
-            Object.values(branch.installations).reduce(
-              (branchTotal: number, installation: any) => branchTotal + installation.sensors.length,
-              0,
-            ),
+
+        const branchEntries = Object.entries(companyData.branches || {})
+        const companySensors = branchEntries.flatMap(([, branchData]: [string, any]) =>
+          Object.values(branchData.installations || {}).flatMap((installationData: any) => installationData.sensors || []),
+        )
+        const companyInstallations = branchEntries.reduce(
+          (count: number, [, branchData]: [string, any]) => count + Object.keys(branchData.installations || {}).length,
           0,
         )
+        const companyStatus = summarizeSensorStatus(companySensors)
 
         return (
-          <div key={companyName} className="border rounded-lg overflow-hidden">
+          <div
+            key={companyName}
+            className="rounded-xl border border-blue-200/80 dark:border-blue-900/60 border-l-4 border-l-blue-400 dark:border-l-blue-500 bg-blue-50/40 dark:bg-blue-950/20 overflow-hidden"
+          >
             {/* Company Header */}
             <div
-              className="flex items-center gap-3 p-4 bg-blue-50 border-b cursor-pointer hover:bg-blue-100 transition-colors"
+              className="group flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 sm:p-5 cursor-pointer hover:bg-blue-100/60 dark:hover:bg-blue-900/30 transition-colors"
               onClick={() => toggleCompany(companyName)}
             >
-              {isCompanyExpanded ? (
-                <ChevronDown className="h-5 w-5 text-blue-600" />
-              ) : (
-                <ChevronRight className="h-5 w-5 text-blue-600" />
-              )}
-              <Factory className="h-5 w-5 text-blue-600" />
-              <div className="flex-1">
-                <h2 className="text-lg font-semibold text-blue-900">{companyName}</h2>
-                <p className="text-sm text-blue-700">
-                  {Object.keys(companyData.branches).length} sucursal(es) • {totalSensors} sensor(es)
-                </p>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-md border border-blue-200 dark:border-blue-800 bg-white/90 dark:bg-blue-950/40 p-1.5">
+                  {isCompanyExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Factory className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      {companyName}
+                    </h2>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                    {branchEntries.length} sucursal(es) • {companyInstallations} instalación(es) • {companyStatus.total} sensor(es)
+                  </p>
+                </div>
               </div>
-              <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                {totalSensors}
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Sensores {companyStatus.total}</Badge>
+                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-emerald-200">
+                  Activos {companyStatus.active}
+                </Badge>
+                {(companyStatus.alert > 0 || companyStatus.offline > 0) && (
+                  <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200">
+                    Atención {companyStatus.alert + companyStatus.offline}
+                  </Badge>
+                )}
+              </div>
             </div>
 
             {/* Company Content */}
             {isCompanyExpanded && (
-              <div className="p-4 space-y-4">
-                {Object.entries(companyData.branches).map(([branchName, branchData]: [string, any]) => {
+              <div className="px-4 pb-4 sm:px-5 sm:pb-5 space-y-3">
+                {branchEntries.map(([branchName, branchData]: [string, any]) => {
                   const branchKey = `${companyName}-${branchName}`
                   const isBranchExpanded = expandedBranches.has(branchKey)
-                  const branchSensors = Object.values(branchData.installations).reduce(
-                    (total: number, installation: any) => total + installation.sensors.length,
-                    0,
-                  )
+                  const installationEntries = Object.entries(branchData.installations || {})
+                  const branchSensors = installationEntries.flatMap(([, installationData]: [string, any]) => installationData.sensors || [])
+                  const branchStatus = summarizeSensorStatus(branchSensors)
 
                   return (
-                    <div key={branchKey} className="border rounded-lg overflow-hidden ml-4">
+                    <div
+                      key={branchKey}
+                      className="rounded-lg border border-emerald-200/80 dark:border-emerald-900/60 border-l-4 border-l-emerald-400 dark:border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 overflow-hidden"
+                    >
                       {/* Branch Header */}
                       <div
-                        className="flex items-center gap-3 p-3 bg-green-50 border-b cursor-pointer hover:bg-green-100 transition-colors"
+                        className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 sm:p-4 cursor-pointer hover:bg-emerald-100/60 dark:hover:bg-emerald-900/25 transition-colors"
                         onClick={() => toggleBranch(branchKey)}
                       >
-                        {isBranchExpanded ? (
-                          <ChevronDown className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-green-600" />
-                        )}
-                        <Building2 className="h-4 w-4 text-green-600" />
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-green-900">{branchName}</h3>
-                          <p className="text-sm text-green-700">
-                            {Object.keys(branchData.installations).length} instalación(es) • {branchSensors} sensor(es)
-                          </p>
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5">
+                            {isBranchExpanded ? (
+                              <ChevronDown className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />
+                              <h3 className="font-semibold text-slate-900 dark:text-slate-100">{branchName}</h3>
+                            </div>
+                            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                              {installationEntries.length} instalación(es) • {branchStatus.total} sensor(es)
+                            </p>
+                          </div>
                         </div>
-                        <Badge variant="secondary" className="bg-green-100 text-green-800">
-                          {branchSensors}
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{branchStatus.total}</Badge>
+                          {branchStatus.alert > 0 && (
+                            <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200">
+                              Alerta {branchStatus.alert}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
 
                       {/* Branch Content */}
                       {isBranchExpanded && (
-                        <div className="p-3 space-y-3">
-                          {Object.entries(branchData.installations).map(
-                            ([installationName, installationData]: [string, any]) => {
-                              const installationKey = `${branchKey}-${installationName}`
-                              const isInstallationExpanded = expandedInstallations.has(installationKey)
+                        <div className="px-3 pb-3 sm:px-4 sm:pb-4 space-y-3">
+                          {installationEntries.map(([installationName, installationData]: [string, any]) => {
+                            const installationKey = `${branchKey}-${installationName}`
+                            const isInstallationExpanded = expandedInstallations.has(installationKey)
+                            const installationSensors = installationData.sensors || []
+                            const installationStatus = summarizeSensorStatus(installationSensors)
 
-                              return (
-                                <div key={installationKey} className="border rounded-lg overflow-hidden ml-4">
-                                  {/* Installation Header */}
-                                  <div
-                                    className="flex items-center gap-3 p-3 bg-orange-50 border-b cursor-pointer hover:bg-orange-100 transition-colors"
-                                    onClick={() => toggleInstallation(installationKey)}
-                                  >
-                                    {isInstallationExpanded ? (
-                                      <ChevronDown className="h-4 w-4 text-orange-600" />
-                                    ) : (
-                                      <ChevronRight className="h-4 w-4 text-orange-600" />
-                                    )}
-                                    <MapPin className="h-4 w-4 text-orange-600" />
-                                    <div className="flex-1">
-                                      <h4 className="font-semibold text-orange-900">{installationName}</h4>
-                                      <p className="text-sm text-orange-700">
-                                        {installationData.sensors.length} sensor(es)
+                            return (
+                              <div
+                                key={installationKey}
+                                className="rounded-lg border border-amber-200/80 dark:border-amber-900/60 border-l-4 border-l-amber-400 dark:border-l-amber-500 bg-amber-50/45 dark:bg-amber-950/20 overflow-hidden"
+                              >
+                                {/* Installation Header */}
+                                <div
+                                  className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 cursor-pointer hover:bg-amber-100/60 dark:hover:bg-amber-900/25 transition-colors"
+                                  onClick={() => toggleInstallation(installationKey)}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <div className="mt-0.5">
+                                      {isInstallationExpanded ? (
+                                        <ChevronDown className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                      ) : (
+                                        <ChevronRight className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                      )}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <MapPin className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                                        <h4 className="font-semibold text-slate-900 dark:text-slate-100">{installationName}</h4>
+                                      </div>
+                                      <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                                        {installationStatus.total} sensor(es)
                                       </p>
                                     </div>
-                                    <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                                      {installationData.sensors.length}
-                                    </Badge>
                                   </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline">{installationStatus.total}</Badge>
+                                    {installationStatus.alert > 0 && (
+                                      <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-amber-200">
+                                        Alerta {installationStatus.alert}
+                                      </Badge>
+                                    )}
+                                    {installationStatus.active > 0 && (
+                                      <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-emerald-200">
+                                        Activos {installationStatus.active}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
 
-                                  {/* Installation Content - Sensors */}
-                                  {isInstallationExpanded && (
-                                    <div className="p-3">
-                                      {viewMode === "hierarchical" ? (
-                                        <div className="space-y-2">
-                                          {installationData.sensors.map((sensor: any) => (
-                                            <SensorRow
+                                {/* Installation Content - Sensors */}
+                                {isInstallationExpanded && (
+                                  <div className="p-3 border-t border-amber-200/60 dark:border-amber-900/40 bg-white/70 dark:bg-slate-900/30">
+                                    {viewMode === "hierarchical" ? (
+                                      <div className="space-y-2">
+                                        {installationSensors.map((sensor: any) => (
+                                          <SensorRow
+                                            key={sensor.id_sensor_instalado}
+                                            sensor={sensor}
+                                            onToggleStatus={onToggleStatus}
+                                            onEdit={onEdit}
+                                            onDelete={onDelete}
+                                          />
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                                        {installationSensors.map((sensor: any) => {
+                                          if (viewMode === "simple") {
+                                            return (
+                                              <SimpleSensorCard
+                                                key={sensor.id_sensor_instalado}
+                                                sensor={sensor}
+                                                onToggleStatus={onToggleStatus}
+                                                onEdit={onEdit}
+                                                onDelete={onDelete}
+                                              />
+                                            )
+                                          }
+
+                                          return (
+                                            <AdvancedSensorCard
                                               key={sensor.id_sensor_instalado}
                                               sensor={sensor}
                                               onToggleStatus={onToggleStatus}
                                               onEdit={onEdit}
                                               onDelete={onDelete}
                                             />
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <div
-                                          className={`grid gap-4 ${
-                                            viewMode === "simple"
-                                              ? "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                                              : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
-                                          }`}
-                                        >
-                                          {installationData.sensors.map((sensor: any) => {
-                                            if (viewMode === "simple") {
-                                              return (
-                                                <SimpleSensorCard
-                                                  key={sensor.id_sensor_instalado}
-                                                  sensor={sensor}
-                                                  onToggleStatus={onToggleStatus}
-                                                  onEdit={onEdit}
-                                                  onDelete={onDelete}
-                                                />
-                                              )
-                                            } else {
-                                              return (
-                                                <AdvancedSensorCard
-                                                  key={sensor.id_sensor_instalado}
-                                                  sensor={sensor}
-                                                  onToggleStatus={onToggleStatus}
-                                                  onEdit={onEdit}
-                                                  onDelete={onDelete}
-                                                />
-                                              )
-                                            }
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            },
-                          )}
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                     </div>

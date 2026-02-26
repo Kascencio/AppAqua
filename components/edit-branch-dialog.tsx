@@ -34,6 +34,8 @@ export default function EditBranchDialog({ open, onOpenChange, onEditBranch, bra
   const [calle, setCalle] = useState("")
   const [numeroIntExt, setNumeroIntExt] = useState("")
   const [referencia, setReferencia] = useState("")
+  const [latitud, setLatitud] = useState("")
+  const [longitud, setLongitud] = useState("")
   const [estadoOperativo, setEstadoOperativo] = useState<"activa" | "inactiva">("activa")
 
   useEffect(() => {
@@ -45,6 +47,8 @@ export default function EditBranchDialog({ open, onOpenChange, onEditBranch, bra
       setCalle(branch.calle)
       setNumeroIntExt(branch.numero_int_ext || "")
       setReferencia(branch.referencia || "")
+      setLatitud(branch.latitud != null ? String(branch.latitud) : "")
+      setLongitud(branch.longitud != null ? String(branch.longitud) : "")
       setEstadoOperativo(branch.estado_operativo)
     }
   }, [branch])
@@ -65,6 +69,8 @@ export default function EditBranchDialog({ open, onOpenChange, onEditBranch, bra
       calle,
       numero_int_ext: numeroIntExt || null,
       referencia: referencia || null,
+      latitud: latitud ? Number(latitud) : null,
+      longitud: longitud ? Number(longitud) : null,
       estado_operativo: estadoOperativo,
     }
 
@@ -185,6 +191,32 @@ export default function EditBranchDialog({ open, onOpenChange, onEditBranch, bra
               placeholder="Ej: Frente al parque central"
               rows={3}
             />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-latitud">Latitud</Label>
+              <Input
+                id="edit-latitud"
+                type="number"
+                step="0.0000001"
+                value={latitud}
+                onChange={(e) => setLatitud(e.target.value)}
+                placeholder="17.9869000"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-longitud">Longitud</Label>
+              <Input
+                id="edit-longitud"
+                type="number"
+                step="0.0000001"
+                value={longitud}
+                onChange={(e) => setLongitud(e.target.value)}
+                placeholder="-92.9303000"
+              />
+            </div>
           </div>
 
           <DialogFooter>

@@ -20,6 +20,10 @@ interface SensorReading {
   location?: string
 }
 
+const FACILITY_SENSORS_TTL_MS = 20_000
+const facilitySensorsCache = new Map<number, { expiresAt: number; data: BackendSensorInstalado[] }>()
+const facilitySensorsInflight = new Map<number, Promise<BackendSensorInstalado[]>>()
+
 function computeBucketMinutes(from: Date, to: Date, targetPoints = 200): number {
   const totalMinutes = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 60000))
   const bucket = Math.ceil(totalMinutes / targetPoints)
@@ -71,6 +75,61 @@ function lecturaToDate(l: BackendLectura): Date {
 
 function normalizeListPayload<T>(payload: any): T[] {
   return Array.isArray(payload) ? payload : (payload?.data || [])
+}
+
+async function getFacilitySensors(facilityNum: number): Promise<BackendSensorInstalado[]> {
+  const now = Date.now()
+  const cached = facilitySensorsCache.get(facilityNum)
+  if (cached && cached.expiresAt > now) {
+    return cached.data
+  }
+
+  const inflight = facilitySensorsInflight.get(facilityNum)
+  if (inflight) {
+    return inflight
+  }
+
+  const request = (async () => {
+    const sensoresResp = await backendApi.getSensoresInstalados({
+      id_instalacion: facilityNum,
+      page: 1,
+      limit: 1000,
+    })
+    const sensores = normalizeListPayload<BackendSensorInstalado>(sensoresResp as any)
+    facilitySensorsCache.set(facilityNum, {
+      expiresAt: Date.now() + FACILITY_SENSORS_TTL_MS,
+      data: sensores,
+    })
+    return sensores
+  })()
+
+  facilitySensorsInflight.set(facilityNum, request)
+  try {
+    return await request
+  } finally {
+    facilitySensorsInflight.delete(facilityNum)
+  }
+}
+
+function areReadingsEquivalent(prev: SensorReading[], next: SensorReading[]): boolean {
+  if (prev === next) return true
+  if (prev.length !== next.length) return false
+  if (prev.length === 0) return true
+
+  const checkpoints = [0, Math.floor(prev.length / 2), prev.length - 1]
+  for (const index of checkpoints) {
+    const a = prev[index]
+    const b = next[index]
+    if (!a || !b) return false
+    if (a.id !== b.id) return false
+    if (a.sensorId !== b.sensorId) return false
+    if (a.parameter !== b.parameter) return false
+    if (a.value !== b.value) return false
+    if (a.isOutOfRange !== b.isOutOfRange) return false
+    if (a.timestamp.getTime() !== b.timestamp.getTime()) return false
+  }
+
+  return true
 }
 
 interface UseSensorDataOptions {
@@ -156,8 +215,7 @@ export function useSensorParameterData(facilityId: string, parameter: string, da
     ;(async () => {
       try {
         const facilityNum = Number(facilityId)
-        const sensoresResp = await backendApi.getSensoresInstalados({ id_instalacion: facilityNum, page: 1, limit: 1000 })
-        const sensores = normalizeListPayload<BackendSensorInstalado>(sensoresResp as any)
+        const sensores = await getFacilitySensors(facilityNum)
 
         const desired = normalizeParameterKey(parameter)
         const sensoresFiltrados = sensores.filter((s) => normalizeParameterKey((s as any).tipo_medida || "") === desired)
@@ -240,8 +298,7 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
     setError(null)
     try {
       const facilityNum = Number(facilityId)
-      const sensoresResp = await backendApi.getSensoresInstalados({ id_instalacion: facilityNum, page: 1, limit: 1000 })
-      const sensores = normalizeListPayload<BackendSensorInstalado>(sensoresResp as any)
+      const sensores = await getFacilitySensors(facilityNum)
 
       const desiredKeys = (parameters || []).map(normalizeParameterKey)
 
@@ -322,10 +379,7 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
           return true
         })
 
-      setReadings((prev) => {
-        if (JSON.stringify(prev) === JSON.stringify(mapped)) return prev
-        return mapped
-      })
+      setReadings((prev) => (areReadingsEquivalent(prev, mapped) ? prev : mapped))
     } catch {
       setError("Error al obtener datos de sensores")
     } finally {
@@ -377,8 +431,7 @@ export function useFacilitySensors(facilityId: string) {
     ;(async () => {
       try {
         const facilityNum = Number(facilityId)
-        const resp = await backendApi.getSensoresInstalados({ id_instalacion: facilityNum, page: 1, limit: 1000 })
-        const items = normalizeListPayload<BackendSensorInstalado>(resp as any)
+        const items = await getFacilitySensors(facilityNum)
         const mapped = items
           .map((s) => ({
             parameter: normalizeParameterKey((s as any).tipo_medida || ""),

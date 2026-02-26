@@ -9,8 +9,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Calendar, Building, Trash2, Edit, Plus } from "lucide-react"
 import { AddInstalacionDialog } from "@/components/add-instalacion-dialog"
 import { EditInstalacionDialog } from "@/components/edit-instalacion-dialog"
+import { AddOrganizacionDialog } from "@/components/add-organizacion-dialog"
 import { useInstalaciones } from "@/hooks/use-instalaciones"
+import { useOrganizaciones } from "@/hooks/use-organizaciones"
+import { useRolePermissions } from "@/hooks/use-role-permissions"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/context/auth-context"
 import type { Instalacion as BackendInstalacion } from "@/lib/backend-client"
 import type { Instalacion } from "@/types/instalacion"
 
@@ -21,12 +25,17 @@ type InstalacionUI = BackendInstalacion & Partial<Instalacion>
 
 export default function InstalacionesPage() {
   const { instalaciones, loading, error, deleteInstalacion, createInstalacion, updateInstalacion } = useInstalaciones()
+  const { refresh: refreshOrganizaciones } = useOrganizaciones({ auto: false })
+  const { user } = useAuth()
+  const permissions = useRolePermissions()
   const [searchTerm, setSearchTerm] = useState("")
   const [filteredInstalaciones, setFilteredInstalaciones] = useState<InstalacionUI[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isAddOrganizacionOpen, setIsAddOrganizacionOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [selectedInstalacion, setSelectedInstalacion] = useState<Instalacion | null>(null)
   const { toast } = useToast()
+  const canManageInstallaciones = permissions.canManageInstallations || permissions.canCreateData
 
   const normalizeOrganizacionSucursalId = (idEmpresaSucursal: number) => {
     const n = Number(idEmpresaSucursal)
@@ -44,7 +53,8 @@ export default function InstalacionesPage() {
           (instalacion.nombre_instalacion || instalacion.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
           (instalacion.descripcion || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
           (instalacion.tipo_uso || instalacion.tipo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (instalacion.nombre_empresa as string || '').toLowerCase().includes(searchTerm.toLowerCase()),
+          (instalacion.nombre_empresa as string || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          ((instalacion as any).nombre_organizacion || '').toLowerCase().includes(searchTerm.toLowerCase()),
       )
       setFilteredInstalaciones(filtered)
     }
@@ -52,20 +62,45 @@ export default function InstalacionesPage() {
 
   const handleAddInstalacion = async (instalacionData: Omit<Instalacion, "id_instalacion">) => {
     try {
-      const id_organizacion_sucursal = normalizeOrganizacionSucursalId(Number(instalacionData.id_empresa_sucursal))
-      if (!id_organizacion_sucursal) {
-        throw new Error("Sucursal inválida")
-      }
-
-      await createInstalacion({
-        id_organizacion_sucursal,
+      const payload: Record<string, unknown> = {
         nombre_instalacion: instalacionData.nombre_instalacion,
+        codigo_instalacion: instalacionData.codigo_instalacion,
         fecha_instalacion: instalacionData.fecha_instalacion,
         estado_operativo: instalacionData.estado_operativo,
         descripcion: instalacionData.descripcion,
         tipo_uso: instalacionData.tipo_uso,
+        ubicacion: instalacionData.ubicacion,
+        latitud: instalacionData.latitud,
+        longitud: instalacionData.longitud,
+        capacidad_maxima: instalacionData.capacidad_maxima,
+        capacidad_actual: instalacionData.capacidad_actual,
+        volumen_agua_m3: instalacionData.volumen_agua_m3,
+        profundidad_m: instalacionData.profundidad_m,
+        fecha_ultima_inspeccion: instalacionData.fecha_ultima_inspeccion,
+        responsable_operativo: instalacionData.responsable_operativo,
+        contacto_emergencia: instalacionData.contacto_emergencia,
         id_proceso: instalacionData.id_proceso,
-      } as any)
+      }
+
+      const idOrganizacion = Number(instalacionData.id_organizacion ?? 0)
+      if (Number.isFinite(idOrganizacion) && idOrganizacion > 0) {
+        payload.id_organizacion = idOrganizacion
+      }
+
+      const rawSucursal = instalacionData.id_empresa_sucursal
+      if (rawSucursal !== undefined && rawSucursal !== null && Number(rawSucursal) > 0) {
+        const id_organizacion_sucursal = normalizeOrganizacionSucursalId(Number(rawSucursal))
+        if (!id_organizacion_sucursal) {
+          throw new Error("Sucursal inválida")
+        }
+        payload.id_organizacion_sucursal = id_organizacion_sucursal
+      }
+
+      if (!payload.id_organizacion_sucursal && !payload.id_organizacion) {
+        throw new Error("Debes seleccionar una organización")
+      }
+
+      await createInstalacion(payload as any)
       setIsAddDialogOpen(false)
       toast({
         title: "Éxito",
@@ -107,15 +142,28 @@ export default function InstalacionesPage() {
     const normalized: Instalacion = {
       id_instalacion: instalacion.id_instalacion,
       id_empresa_sucursal: Number(instalacion.id_empresa_sucursal ?? instalacion.id_sucursal ?? 0),
+      id_organizacion: Number((instalacion as any).id_organizacion ?? 0) || undefined,
       nombre_instalacion: instalacion.nombre_instalacion ?? instalacion.nombre ?? "",
+      codigo_instalacion: (instalacion as any).codigo_instalacion ?? (instalacion as any).codigo ?? "",
       fecha_instalacion: instalacion.fecha_instalacion ?? instalacion.created_at ?? new Date().toISOString().split("T")[0],
       estado_operativo: instalacion.estado_operativo ?? "activo",
       descripcion: instalacion.descripcion ?? "",
       tipo_uso: normalizedTipoUso,
+      ubicacion: (instalacion as any).ubicacion,
+      latitud: Number((instalacion as any).latitud) || undefined,
+      longitud: Number((instalacion as any).longitud) || undefined,
+      capacidad_maxima: Number((instalacion as any).capacidad_maxima) || undefined,
+      capacidad_actual: Number((instalacion as any).capacidad_actual) || undefined,
+      volumen_agua_m3: Number((instalacion as any).volumen_agua_m3) || undefined,
+      profundidad_m: Number((instalacion as any).profundidad_m) || undefined,
+      fecha_ultima_inspeccion: (instalacion as any).fecha_ultima_inspeccion,
+      responsable_operativo: (instalacion as any).responsable_operativo,
+      contacto_emergencia: (instalacion as any).contacto_emergencia,
       id_proceso: Number(instalacion.id_proceso ?? 1),
       nombre_empresa: instalacion.nombre_empresa,
       nombre_proceso: instalacion.nombre_proceso,
       nombre_especie: instalacion.nombre_especie,
+      sucursal_nombre: (instalacion as any).sucursal_nombre,
     }
     setSelectedInstalacion(normalized)
     setIsEditDialogOpen(true)
@@ -123,20 +171,45 @@ export default function InstalacionesPage() {
 
   const handleEditInstalacion = async (updated: Instalacion) => {
     try {
-      const id_organizacion_sucursal = normalizeOrganizacionSucursalId(Number(updated.id_empresa_sucursal))
-      if (!id_organizacion_sucursal) {
-        throw new Error("Sucursal inválida")
-      }
-
-      await updateInstalacion(updated.id_instalacion, {
-        id_organizacion_sucursal,
+      const payload: Record<string, unknown> = {
         nombre_instalacion: updated.nombre_instalacion,
+        codigo_instalacion: updated.codigo_instalacion,
         fecha_instalacion: updated.fecha_instalacion,
         estado_operativo: updated.estado_operativo,
         descripcion: updated.descripcion,
         tipo_uso: updated.tipo_uso,
+        ubicacion: updated.ubicacion,
+        latitud: updated.latitud,
+        longitud: updated.longitud,
+        capacidad_maxima: updated.capacidad_maxima,
+        capacidad_actual: updated.capacidad_actual,
+        volumen_agua_m3: updated.volumen_agua_m3,
+        profundidad_m: updated.profundidad_m,
+        fecha_ultima_inspeccion: updated.fecha_ultima_inspeccion,
+        responsable_operativo: updated.responsable_operativo,
+        contacto_emergencia: updated.contacto_emergencia,
         id_proceso: updated.id_proceso,
-      } as any)
+      }
+
+      const idOrganizacion = Number(updated.id_organizacion ?? 0)
+      if (Number.isFinite(idOrganizacion) && idOrganizacion > 0) {
+        payload.id_organizacion = idOrganizacion
+      }
+
+      const rawSucursal = updated.id_empresa_sucursal
+      if (rawSucursal !== undefined && rawSucursal !== null && Number(rawSucursal) > 0) {
+        const id_organizacion_sucursal = normalizeOrganizacionSucursalId(Number(rawSucursal))
+        if (!id_organizacion_sucursal) {
+          throw new Error("Sucursal inválida")
+        }
+        payload.id_organizacion_sucursal = id_organizacion_sucursal
+      }
+
+      if (!payload.id_organizacion_sucursal && !payload.id_organizacion) {
+        throw new Error("Debes seleccionar una organización")
+      }
+
+      await updateInstalacion(updated.id_instalacion, payload as any)
 
       toast({
         title: "Éxito",
@@ -201,10 +274,20 @@ export default function InstalacionesPage() {
             <h1 className="text-3xl font-bold tracking-tight">Instalaciones</h1>
             <p className="text-muted-foreground">Gestiona las instalaciones acuícolas del sistema</p>
           </div>
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Agregar Instalación
-          </Button>
+          <div className="flex items-center gap-2">
+            {canManageInstallaciones && user?.role === "superadmin" && (
+              <Button variant="outline" onClick={() => setIsAddOrganizacionOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nueva Organización
+              </Button>
+            )}
+            {canManageInstallaciones && (
+              <Button onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Agregar Instalación
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -310,7 +393,7 @@ export default function InstalacionesPage() {
                     ? "No se encontraron instalaciones que coincidan con la búsqueda"
                     : "No hay instalaciones registradas"}
                 </p>
-                {!searchTerm && (
+                {!searchTerm && canManageInstallaciones && (
                   <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)}>
                     <Plus className="mr-2 h-4 w-4" />
                     Crear primera instalación
@@ -330,21 +413,25 @@ export default function InstalacionesPage() {
                       <p className="text-sm text-muted-foreground mt-1">ID: {instalacion.id_instalacion}</p>
                     </div>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(instalacion)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          handleDeleteInstalacion(
-                            instalacion.id_instalacion,
-                            instalacion.nombre_instalacion ?? instalacion.nombre ?? "Instalación"
-                          )
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canManageInstallaciones && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => openEditDialog(instalacion)}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              handleDeleteInstalacion(
+                                instalacion.id_instalacion,
+                                instalacion.nombre_instalacion ?? instalacion.nombre ?? "Instalación"
+                              )
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -357,24 +444,115 @@ export default function InstalacionesPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">{instalacion.descripcion}</p>
+                    <div className="space-y-3">
+                      <p className="text-sm text-muted-foreground">{instalacion.descripcion}</p>
+                      {!!(instalacion as any).codigo_instalacion && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Código:</span>
+                          <span>{String((instalacion as any).codigo_instalacion)}</span>
+                        </div>
+                      )}
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">Instalada:</span>
-                        <span>{new Date(instalacion.fecha_instalacion || instalacion.created_at).toLocaleDateString()}</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">Instalada:</span>
+                        <span>{new Date(instalacion.fecha_instalacion ?? instalacion.created_at ?? Date.now()).toLocaleDateString()}</span>
                       </div>
 
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium">Empresa:</span>
-                        <span>{(instalacion as InstalacionUI).nombre_empresa || `ID ${instalacion.id_empresa_sucursal || instalacion.id_sucursal}`}</span>
+                        <span className="font-medium">Organización:</span>
+                        <span>
+                          {(instalacion as any).nombre_organizacion ||
+                            (instalacion as InstalacionUI).nombre_empresa ||
+                            `ID ${(instalacion as any).id_organizacion ?? "-"}`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">Sucursal:</span>
+                        <span>
+                          {(instalacion as InstalacionUI).sucursal_nombre ||
+                            `ID ${instalacion.id_empresa_sucursal || instalacion.id_sucursal || "-"}`}
+                        </span>
                       </div>
 
                       <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium">Proceso:</span>
                         <span>{(instalacion as InstalacionUI).nombre_proceso || `ID ${(instalacion as InstalacionUI).id_proceso || '-'}`}</span>
+                      </div>
+
+                      {!!(instalacion as any).ubicacion && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Ubicación:</span>
+                          <span>{String((instalacion as any).ubicacion)}</span>
+                        </div>
+                      )}
+
+                      {(((instalacion as any).capacidad_actual ?? null) !== null || ((instalacion as any).capacidad_maxima ?? null) !== null) && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Capacidad:</span>
+                          <span>
+                            {String((instalacion as any).capacidad_actual ?? "-")} / {String((instalacion as any).capacidad_maxima ?? "-")}
+                          </span>
+                        </div>
+                      )}
+
+                      {((instalacion as any).porcentaje_ocupacion ?? null) !== null && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Ocupación:</span>
+                          <span>{String((instalacion as any).porcentaje_ocupacion)}%</span>
+                        </div>
+                      )}
+
+                      {(((instalacion as any).volumen_agua_m3 ?? null) !== null || ((instalacion as any).profundidad_m ?? null) !== null) && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Volumen/Prof.:</span>
+                          <span>
+                            {String((instalacion as any).volumen_agua_m3 ?? "-")} m³ / {String((instalacion as any).profundidad_m ?? "-")} m
+                          </span>
+                        </div>
+                      )}
+
+                      {!!(instalacion as any).fecha_ultima_inspeccion && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Última inspección:</span>
+                          <span>{new Date((instalacion as any).fecha_ultima_inspeccion).toLocaleDateString()}</span>
+                        </div>
+                      )}
+
+                      {(Number.isFinite(Number((instalacion as any).latitud)) && Number.isFinite(Number((instalacion as any).longitud))) && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Coordenadas:</span>
+                          <span>
+                            {Number((instalacion as any).latitud).toFixed(5)}, {Number((instalacion as any).longitud).toFixed(5)}
+                          </span>
+                        </div>
+                      )}
+
+                      {!!(instalacion as any).responsable_operativo && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Responsable:</span>
+                          <span>{String((instalacion as any).responsable_operativo)}</span>
+                        </div>
+                      )}
+
+                      {!!(instalacion as any).contacto_emergencia && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">Contacto emergencia:</span>
+                          <span>{String((instalacion as any).contacto_emergencia)}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium">Sensores:</span>
+                        <span>{String((instalacion as any).total_sensores ?? 0)}</span>
+                        {Array.isArray((instalacion as any).tipos_sensores) && (instalacion as any).tipos_sensores.length > 0 && (
+                          <span className="text-muted-foreground truncate">
+                            ({(instalacion as any).tipos_sensores.slice(0, 3).join(", ")}
+                            {(instalacion as any).tipos_sensores.length > 3 ? "..." : ""})
+                          </span>
+                        )}
                       </div>
 
                       {(instalacion as InstalacionUI).nombre_especie && (
@@ -391,17 +569,35 @@ export default function InstalacionesPage() {
           </div>
         )}
 
-        <AddInstalacionDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onAddInstalacion={handleAddInstalacion} />
+        {canManageInstallaciones && (
+          <AddInstalacionDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onAddInstalacion={handleAddInstalacion} />
+        )}
 
-        <EditInstalacionDialog
-          open={isEditDialogOpen}
-          onOpenChange={(open) => {
-            setIsEditDialogOpen(open)
-            if (!open) setSelectedInstalacion(null)
-          }}
-          instalacion={selectedInstalacion}
-          onEditInstalacion={handleEditInstalacion}
-        />
+        {canManageInstallaciones && user?.role === "superadmin" && (
+          <AddOrganizacionDialog
+            open={isAddOrganizacionOpen}
+            onOpenChange={setIsAddOrganizacionOpen}
+            onSuccess={async () => {
+              await refreshOrganizaciones()
+              toast({
+                title: "Éxito",
+                description: "Organización creada y disponible para nuevas instalaciones",
+              })
+            }}
+          />
+        )}
+
+        {canManageInstallaciones && (
+          <EditInstalacionDialog
+            open={isEditDialogOpen}
+            onOpenChange={(open) => {
+              setIsEditDialogOpen(open)
+              if (!open) setSelectedInstalacion(null)
+            }}
+            instalacion={selectedInstalacion}
+            onEditInstalacion={handleEditInstalacion}
+          />
+        )}
       </div>
     </div>
   )

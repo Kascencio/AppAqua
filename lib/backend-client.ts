@@ -66,6 +66,11 @@ export interface Sucursal {
   direccion_completa?: string
   latitud?: number
   longitud?: number
+  direccion_sucursal?: string
+  numero_int_ext?: string
+  referencia?: string
+  id_cp?: number
+  id_colonia?: number
   ciudad?: string
   pais?: string
   activo: boolean
@@ -75,28 +80,53 @@ export interface Sucursal {
 
 export interface Instalacion {
   id_instalacion: number
-  id_sucursal: number
-  nombre: string
+  id_organizacion?: number | null
+  id_sucursal?: number
+  nombre?: string
   descripcion?: string
   tipo?: string
   capacidad?: number
-  activo: boolean
-  created_at: string
-  updated_at: string
+  codigo_instalacion?: string
+  ubicacion?: string
+  latitud?: number
+  longitud?: number
+  capacidad_maxima?: number
+  capacidad_actual?: number
+  volumen_agua_m3?: number
+  profundidad_m?: number
+  fecha_ultima_inspeccion?: string
+  responsable_operativo?: string
+  contacto_emergencia?: string
+  activo?: boolean
+  created_at?: string
+  updated_at?: string
   // Extended properties for UI compatibility
   id_empresa_sucursal?: number
   nombre_instalacion?: string
+  sucursal_nombre?: string
+  nombre_organizacion?: string | null
+  nombre_proceso?: string | null
+  nombre_especie?: string | null
   tipo_uso?: string
   [key: string]: unknown
 }
 
 export interface SensorInstalado {
   id_sensor_instalado: number
-  id_instalacion: number
+  id_instalacion?: number | null
   tipo_medida: string
   unidad_medida: string
   ubicacion?: string
   activo: boolean
+  estado_operativo?: "activo" | "inactivo" | "mantenimiento"
+  estado_visual?: "activo" | "inactivo" | "mantenimiento"
+  status?: "active" | "inactive" | "maintenance"
+  tiene_instalacion?: boolean
+  requiere_asignacion_instalacion?: boolean
+  instalacion_nombre?: string | null
+  ultima_lectura_at?: string | null
+  dias_sin_datos?: number | null
+  dias_en_mantenimiento?: number | null
   created_at: string
   updated_at: string
 }
@@ -135,9 +165,33 @@ export interface Especie {
   ph_optimo_max?: number
   oxigeno_optimo_min?: number
   oxigeno_optimo_max?: number
+  salinidad_optima_min?: number
+  salinidad_optima_max?: number
   activo?: boolean
+  estado?: 'activa' | 'inactiva'
   created_at?: string
   updated_at?: string
+}
+
+export interface ParametroCatalogo {
+  id_parametro: number
+  nombre_parametro?: string
+  unidad_medida?: string
+  nombre?: string
+  unidad?: string
+  [key: string]: unknown
+}
+
+export interface EspecieParametro {
+  id_especie_parametro: number
+  id_especie: number
+  id_parametro: number
+  Rmin: number
+  Rmax: number
+  nombre_parametro?: string
+  unidad_medida?: string
+  nombre_especie?: string
+  [key: string]: unknown
 }
 
 export interface Proceso {
@@ -145,11 +199,14 @@ export interface Proceso {
   id_instalacion: number
   id_especie?: number
   nombre: string
+  nombre_proceso?: string
   descripcion?: string
+  objetivos?: string
   fecha_inicio: string
   fecha_fin_esperada?: string
   fecha_fin_real?: string
-  estado: 'planificado' | 'en_progreso' | 'completado' | 'cancelado'
+  porcentaje_avance?: number
+  estado: 'planificado' | 'en_progreso' | 'pausado' | 'completado' | 'cancelado'
   created_at: string
   updated_at: string
 }
@@ -194,63 +251,151 @@ export class BackendApiError extends Error {
 
 class HttpClient {
   private baseUrl: string
+  private responseCache = new Map<string, { expiresAt: number; data: unknown }>()
+  private inflightRequests = new Map<string, Promise<unknown>>()
+  private readonly DEFAULT_CACHE_TTL_MS = 15_000
+  private readonly SHORT_CACHE_TTL_MS = 5_000
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl
+  }
+
+  private cloneData<T>(value: T): T {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(value)
+    }
+    return JSON.parse(JSON.stringify(value))
+  }
+
+  private getToken(): string | null {
+    if (typeof window === 'undefined') return null
+    const lsToken = window.localStorage?.getItem('token')
+    if (lsToken) return lsToken
+    const match = document.cookie.match(/(?:^|; )access_token=([^;]*)/)
+    return match ? decodeURIComponent(match[1]) : null
+  }
+
+  private buildCacheKey(method: string, endpoint: string): string {
+    return `${method.toUpperCase()}::${this.baseUrl}${endpoint}::${this.getToken() || ''}`
+  }
+
+  private getCacheTtl(endpoint: string): number {
+    if (
+      endpoint.includes('/lecturas') ||
+      endpoint.includes('/promedios') ||
+      endpoint.includes('/notifications') ||
+      endpoint.includes('/alertas')
+    ) {
+      return this.SHORT_CACHE_TTL_MS
+    }
+    return this.DEFAULT_CACHE_TTL_MS
+  }
+
+  invalidateCache() {
+    this.responseCache.clear()
+    this.inflightRequests.clear()
+  }
+
+  private mapExternalToLocalEndpoint(endpoint: string): string {
+    // Map explícito para auth (evita /api/login inexistente)
+    if (endpoint === '/external-api/login') return '/api/auth/login'
+    if (endpoint === '/external-api/logout') return '/api/auth/logout'
+    if (endpoint === '/external-api/me') return '/api/auth/me'
+    if (endpoint === '/external-api/refresh') return '/api/auth/refresh'
+    if (endpoint === '/external-api/register') return '/api/auth/register'
+
+    // Resto de endpoints: misma ruta pero bajo /api/*
+    return endpoint.replace('/external-api/', '/api/')
+  }
+
+  private async doFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`
+
+    const token = this.getToken()
+
+    const body = (options as any).body
+    const hasBody = body !== undefined && body !== null
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
+
+    const mergedHeaders: Record<string, string> = {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers as any),
+    }
+
+    if (hasBody && !isFormData) {
+      const hasContentType = Object.keys(mergedHeaders).some((h) => h.toLowerCase() === 'content-type')
+      if (!hasContentType) mergedHeaders['Content-Type'] = 'application/json'
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...mergedHeaders,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new BackendApiError(
+        errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+        response.status,
+        errorData
+      )
+    }
+
+    return await response.json()
   }
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`
+    const method = (options.method || 'GET').toUpperCase()
+    const cacheKey = this.buildCacheKey(method, endpoint)
 
-    const getToken = (): string | null => {
-      if (typeof window === 'undefined') return null
-      // Prefer localStorage token (lo seteamos en AuthContext)
-      const lsToken = window.localStorage?.getItem('token')
-      if (lsToken) return lsToken
-
-      // Fallback a cookie access_token (middleware usa esta cookie)
-      const match = document.cookie.match(/(?:^|; )access_token=([^;]*)/)
-      return match ? decodeURIComponent(match[1]) : null
-    }
-    
     try {
-      const token = getToken()
+      if (method === 'GET') {
+        const cached = this.responseCache.get(cacheKey)
+        if (cached && cached.expiresAt > Date.now()) {
+          return this.cloneData(cached.data as T)
+        }
 
-      const body = (options as any).body
-      const hasBody = body !== undefined && body !== null
-      const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
-
-      const mergedHeaders: Record<string, string> = {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers as any),
+        const inflight = this.inflightRequests.get(cacheKey)
+        if (inflight) {
+          return this.cloneData((await inflight) as T)
+        }
       }
 
-      if (hasBody && !isFormData) {
-        const hasContentType = Object.keys(mergedHeaders).some((h) => h.toLowerCase() === 'content-type')
-        if (!hasContentType) mergedHeaders['Content-Type'] = 'application/json'
+      const requestPromise = this.doFetch<T>(endpoint, options)
+
+      if (method === 'GET') {
+        this.inflightRequests.set(cacheKey, requestPromise as Promise<unknown>)
       }
 
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          ...mergedHeaders,
-        },
-      })
+      const data = await requestPromise
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new BackendApiError(
-          errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`,
-          response.status,
-          errorData
-        )
+      if (method === 'GET') {
+        this.responseCache.set(cacheKey, {
+          expiresAt: Date.now() + this.getCacheTtl(endpoint),
+          data,
+        })
+      } else {
+        this.invalidateCache()
       }
 
-      return await response.json()
+      return this.cloneData(data)
     } catch (error) {
+      // Fallback en navegador: si falla el proxy externo, intentar route handlers locales en /api/*
+      const isBrowser = typeof window !== 'undefined'
+      const canFallback = endpoint.startsWith('/external-api/')
+      const isProxyDown =
+        error instanceof BackendApiError && (error.statusCode === 502 || error.statusCode === 0)
+
+      if (isBrowser && canFallback && isProxyDown) {
+        const localEndpoint = this.mapExternalToLocalEndpoint(endpoint)
+        return this.doFetch<T>(localEndpoint, options)
+      }
+
       if (error instanceof BackendApiError) {
         throw error
       }
@@ -261,13 +406,40 @@ class HttpClient {
         0,
         error
       )
+    } finally {
+      if (method === 'GET') {
+        this.inflightRequests.delete(cacheKey)
+      }
     }
   }
 
   async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    const queryString = params
-      ? '?' + new URLSearchParams(params).toString()
-      : ''
+    const searchParams = new URLSearchParams()
+    if (params) {
+      for (const [key, rawValue] of Object.entries(params)) {
+        if (rawValue === undefined || rawValue === null) continue
+
+        if (typeof rawValue === 'string') {
+          const trimmed = rawValue.trim()
+          if (!trimmed) continue
+          searchParams.append(key, trimmed)
+          continue
+        }
+
+        if (Array.isArray(rawValue)) {
+          for (const value of rawValue) {
+            if (value === undefined || value === null) continue
+            searchParams.append(key, String(value))
+          }
+          continue
+        }
+
+        searchParams.append(key, String(rawValue))
+      }
+    }
+
+    const serializedQuery = searchParams.toString()
+    const queryString = serializedQuery ? `?${serializedQuery}` : ''
     return this.request<T>(`${endpoint}${queryString}`, {
       method: 'GET',
     })
@@ -484,6 +656,28 @@ export class BackendApiClient {
   }
 
   // ========================================
+  // PARÁMETROS Y ESPECIE-PARÁMETROS
+  // ========================================
+
+  async getParametros() {
+    return this.http.get<ParametroCatalogo[] | PaginatedResponse<ParametroCatalogo>>(`${API_PREFIX}/parametros`)
+  }
+
+  async getEspecieParametros() {
+    return this.http.get<EspecieParametro[] | PaginatedResponse<EspecieParametro>>(`${API_PREFIX}/especie-parametros`)
+  }
+
+  async createEspecieParametro(
+    data: Omit<EspecieParametro, 'id_especie_parametro' | 'nombre_parametro' | 'unidad_medida' | 'nombre_especie'>
+  ) {
+    return this.http.post<ApiResponse<EspecieParametro>>(`${API_PREFIX}/especie-parametros`, data)
+  }
+
+  async deleteEspecieParametro(id: number) {
+    return this.http.delete<ApiResponse<{ id_especie_parametro: number }>>(`${API_PREFIX}/especie-parametros/${id}`)
+  }
+
+  // ========================================
   // PROCESOS
   // ========================================
 
@@ -542,19 +736,28 @@ export class BackendApiClient {
   // ========================================
 
   async login(email: string, password: string) {
-    // Usa /api/login que se proxea al backend externo
-    return this.http.post<any>(`${API_PREFIX}/login`, {
-      correo: email,
-      password,
-    })
+    const payload = { correo: email, password }
+    try {
+      // Flujo principal: backend externo (proxy /external-api en navegador)
+      return await this.http.post<any>(`${API_PREFIX}/login`, payload)
+    } catch (error) {
+      // Fallback para despliegues donde el backend externo no responde (502/timeout)
+      const isBrowser = typeof window !== 'undefined'
+      const isGatewayError =
+        error instanceof BackendApiError && (error.statusCode === 502 || error.statusCode === 0)
+      if (isBrowser && isGatewayError) {
+        return this.http.post<any>('/api/auth/login', payload)
+      }
+      throw error
+    }
   }
 
   async register(data: { nombre: string; email: string; password: string; rol?: string }) {
-    return this.http.post<ApiResponse<{ token: string; usuario: Usuario }>>('/auth/register', data)
+    return this.http.post<ApiResponse<{ token: string; usuario: Usuario }>>(`${API_PREFIX}/auth/register`, data)
   }
 
   async refreshToken(token: string) {
-    return this.http.post<ApiResponse<{ token: string }>>('/auth/refresh', { token })
+    return this.http.post<ApiResponse<{ token: string }>>(`${API_PREFIX}/auth/refresh`, { token })
   }
 }
 

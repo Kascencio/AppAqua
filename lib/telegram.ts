@@ -3,14 +3,30 @@ export interface TelegramSendOptions {
   disable_web_page_preview?: boolean
 }
 
+function normalizeEnv(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    const inner = trimmed.slice(1, -1).trim()
+    return inner || undefined
+  }
+
+  return trimmed
+}
+
 export async function sendTelegramMessage(message: string, chatId?: string, options?: TelegramSendOptions): Promise<{ ok: boolean; error?: string }> {
   try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    const defaultChatId = process.env.TELEGRAM_CHAT_ID_ADMIN
-    const targetChatId = chatId || defaultChatId
+    const token = normalizeEnv(process.env.TELEGRAM_BOT_TOKEN)
+    const defaultChatId = normalizeEnv(process.env.TELEGRAM_CHAT_ID_ADMIN) || normalizeEnv(process.env.TELEGRAM_CHAT_ID)
+    const targetChatId = normalizeEnv(chatId) || defaultChatId
 
     if (!token || !targetChatId) {
-      return { ok: false, error: 'TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID_ADMIN no configurados' }
+      return { ok: false, error: 'TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID(_ADMIN) deben estar configurados' }
     }
 
     const url = `https://api.telegram.org/bot${token}/sendMessage`
@@ -45,4 +61,3 @@ export function buildRecoveryMessage(params: { correo: string; token: string }):
     `Enlace (1 hora): ${link}`,
   ].join('\n')
 }
-

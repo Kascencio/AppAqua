@@ -13,12 +13,17 @@ import {
   ClipboardEditIcon,
   TrashIcon,
   CalendarPlusIcon,
+  ActivityIcon,
+  PauseCircleIcon,
+  CheckCircle2Icon,
+  EyeIcon,
 } from "lucide-react"
 
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -31,9 +36,11 @@ interface ProcessCardProps {
   onEdit?: (proceso: ProcesoConCalculos) => void
   onDelete?: (id: number) => void
   onExtend?: (data: ProcesoConCalculos) => void
+  onViewMonitoring?: (proceso: ProcesoConCalculos) => void
+  onStatusChange?: (proceso: ProcesoConCalculos, estado: "activo" | "pausado" | "completado") => void
 }
 
-export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCardProps) {
+export function ProcessCard({ proceso, onEdit, onDelete, onExtend, onViewMonitoring, onStatusChange }: ProcessCardProps) {
   const [showExtendDialog, setShowExtendDialog] = useState(false)
 
   if (!proceso) {
@@ -54,9 +61,10 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
   } = proceso
 
   // Calcular estado y progreso
-  const estado = calcularEstadoProceso(fecha_inicio, fecha_final, dias_extension)
+  const estado = proceso.estado || calcularEstadoProceso(fecha_inicio, fecha_final, dias_extension)
   const progreso = calcularProgresoProceso(fecha_inicio, fecha_final)
   const { diasTotales, diasTranscurridos } = calcularDiasProceso(fecha_inicio, fecha_final, dias_extension)
+  const hasMenuActions = Boolean(onEdit || (estado === "completado" && onExtend) || onDelete)
 
   // Determinar color del estado
   const getEstadoColor = () => {
@@ -65,6 +73,8 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
         return "bg-green-500"
       case "completado":
         return "bg-blue-500"
+      case "pausado":
+        return "bg-amber-500"
       case "extendido":
         return "bg-purple-500"
       default:
@@ -106,37 +116,45 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
             <div className={`w-3 h-3 rounded-full ${getEstadoColor()}`} />
             <h3 className="font-medium text-base">{nombre_especie}</h3>
             <Badge variant="outline" className="ml-1">
-              {estado === "extendido" ? "Extendido" : estado === "activo" ? "Activo" : "Completado"}
+              {estado === "extendido"
+                ? "Extendido"
+                : estado === "activo"
+                  ? "Activo"
+                  : estado === "pausado"
+                    ? "Pausado"
+                    : "Completado"}
             </Badge>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreVerticalIcon className="h-4 w-4" />
-                <span className="sr-only">Abrir menú</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {onEdit && (
-                <DropdownMenuItem onClick={() => onEdit(proceso)}>
-                  <ClipboardEditIcon className="mr-2 h-4 w-4" />
-                  Editar proceso
-                </DropdownMenuItem>
-              )}
-              {estado === "completado" && onExtend && (
-                <DropdownMenuItem onClick={() => setShowExtendDialog(true)}>
-                  <CalendarPlusIcon className="mr-2 h-4 w-4" />
-                  Extender proceso
-                </DropdownMenuItem>
-              )}
-              {onDelete && (
-                <DropdownMenuItem onClick={() => onDelete(id_proceso)} className="text-red-600">
-                  <TrashIcon className="mr-2 h-4 w-4" />
-                  Eliminar proceso
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {hasMenuActions && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVerticalIcon className="h-4 w-4" />
+                  <span className="sr-only">Abrir menú</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onEdit && (
+                  <DropdownMenuItem onClick={() => onEdit(proceso)}>
+                    <ClipboardEditIcon className="mr-2 h-4 w-4" />
+                    Editar proceso
+                  </DropdownMenuItem>
+                )}
+                {estado === "completado" && onExtend && (
+                  <DropdownMenuItem onClick={() => setShowExtendDialog(true)}>
+                    <CalendarPlusIcon className="mr-2 h-4 w-4" />
+                    Extender proceso
+                  </DropdownMenuItem>
+                )}
+                {onDelete && (
+                  <DropdownMenuItem onClick={() => onDelete(id_proceso)} className="text-red-600">
+                    <TrashIcon className="mr-2 h-4 w-4" />
+                    Eliminar proceso
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </CardHeader>
 
         <CardContent className="p-4 pt-0">
@@ -202,24 +220,72 @@ export function ProcessCard({ proceso, onEdit, onDelete, onExtend }: ProcessCard
         </CardContent>
 
         <CardFooter className="p-4 pt-0 flex justify-between">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <span>ID: {id_proceso}</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Identificador interno del proceso</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <div className="flex flex-wrap items-center gap-2">
+            {onStatusChange && (
+              <div className="w-[150px]">
+                <Select
+                  value={estado === "extendido" ? "activo" : estado}
+                  onValueChange={(value) =>
+                    onStatusChange(
+                      proceso,
+                      (value as "activo" | "pausado" | "completado") || "activo",
+                    )
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="activo">
+                      <div className="flex items-center gap-2">
+                        <ActivityIcon className="h-3.5 w-3.5" />
+                        Activo
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="pausado">
+                      <div className="flex items-center gap-2">
+                        <PauseCircleIcon className="h-3.5 w-3.5" />
+                        Pausado
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="completado">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2Icon className="h-3.5 w-3.5" />
+                        Completado
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {onViewMonitoring && (
+              <Button size="sm" variant="outline" onClick={() => onViewMonitoring(proceso)} className="h-8">
+                <EyeIcon className="h-3.5 w-3.5 mr-1" />
+                Ver monitoreo
+              </Button>
+            )}
+          </div>
 
-          {dias_extension > 0 && (
-            <Badge variant="secondary" className="text-xs">
-              <span className="text-purple-500 mr-1">•</span> Proceso extendido
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span>ID: {id_proceso}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Identificador interno del proceso</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {dias_extension > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                <span className="text-purple-500 mr-1">•</span> Proceso extendido
+              </Badge>
+            )}
+          </div>
         </CardFooter>
       </Card>
 

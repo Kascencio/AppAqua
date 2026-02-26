@@ -1,10 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useUsers } from "@/hooks/use-users"
 import { useRolePermissions } from "@/hooks/use-role-permissions"
+import { useAuth } from "@/context/auth-context"
 import { AdminOnly } from "@/components/role-based-wrapper"
-import { branchService, facilityService } from "@/lib/storage"
+import { api } from "@/lib/api"
 import type { User } from "@/types/user"
 import type { Branch } from "@/types/branch"
 import type { Facility } from "@/types/facility"
@@ -39,6 +41,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Eye,
+  EyeOff,
   Building2,
   Factory,
   AlertCircle,
@@ -60,23 +63,21 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function UsersPage() {
   const permissions = useRolePermissions()
+  const { user: currentUser } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!permissions.canManageUsers) {
+      router.replace("/")
+    }
+  }, [permissions.canManageUsers, router])
 
   // Check if user has permission to access this page
   if (!permissions.canManageUsers) {
-    return (
-      <div className="container mx-auto p-6">
-        <Alert variant="destructive">
-          <ShieldX className="h-4 w-4" />
-          <AlertDescription>
-            No tienes permisos para acceder a la gestión de usuarios. Esta funcionalidad está restringida a
-            administradores.
-          </AlertDescription>
-        </Alert>
-      </div>
-    )
+    return null
   }
 
-  const { users, loading, loadUsers, createUser, updateUser, deleteUser, sendPasswordReset } = useUsers()
+  const { users, loading, loadUsers, createUser, updateUser, deleteUser, sendPasswordReset, changeUserPassword } = useUsers()
   const { toast } = useToast()
 
   const [branches, setBranches] = useState<(Branch | { id: string | number; name: string; status?: string })[]>([])
@@ -87,7 +88,14 @@ export default function UsersPage() {
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [editUserOpen, setEditUserOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [passwordTargetUser, setPasswordTargetUser] = useState<User | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showNewPasswordConfirm, setShowNewPasswordConfirm] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   // Estados para formulario - Alineado con tipos reales
   const [formData, setFormData] = useState({
@@ -100,17 +108,68 @@ export default function UsersPage() {
     phone: "",
     department: "",
     notes: "",
+    password: "",
+    confirmPassword: "",
   })
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [passwordForm, setPasswordForm] = useState({
+    password: "",
+    confirmPassword: "",
+  })
+  const [passwordFormErrors, setPasswordFormErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     loadUsers()
   }, [loadUsers])
 
   useEffect(() => {
-    setBranches(branchService.getAll())
-    setFacilities(facilityService.getAll())
+    let mounted = true
+
+    const loadAccessCatalogs = async () => {
+      try {
+        const [organizaciones, sucursales, instalaciones] = await Promise.all([
+          api.get<any[]>("/organizaciones").catch(() => []),
+          api.get<any[]>("/sucursales").catch(() => []),
+          api.get<any[]>("/instalaciones").catch(() => []),
+        ])
+
+        if (!mounted) return
+
+        const mappedBranches = [
+          ...organizaciones.map((org: any) => ({
+            id: org.id_organizacion,
+            name: org.nombre,
+            status: org.estado === "activa" ? "active" : "inactive",
+          })),
+          ...sucursales.map((suc: any) => ({
+            id: 10000 + Number(suc.id_organizacion_sucursal),
+            name: suc.nombre_sucursal,
+            status: suc.estado === "activa" ? "active" : "inactive",
+          })),
+        ]
+
+        const mappedFacilities: Facility[] = instalaciones.map((inst: any) => ({
+          id: inst.id_instalacion,
+          name: inst.nombre_instalacion,
+          branchId: 10000 + Number(inst.id_organizacion_sucursal ?? inst.id_empresa_sucursal ?? inst.id_sucursal ?? 0),
+          status: inst.estado_operativo === "activo" ? "active" : "inactive",
+          type: inst.tipo_uso || "otros",
+          description: inst.descripcion || "",
+        }))
+
+        setBranches(mappedBranches)
+        setFacilities(mappedFacilities)
+      } catch (error) {
+        console.error("Error loading branch/facility catalogs:", error)
+      }
+    }
+
+    loadAccessCatalogs()
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   // Función auxiliar para obtener acceso a sucursales de forma segura
@@ -175,12 +234,41 @@ export default function UsersPage() {
       errors.phone = "El formato del teléfono no es válido"
     }
 
+    const isCreatorSuperadmin = currentUser?.role === "superadmin"
+    const password = formData.password.trim()
+    const confirmPassword = formData.confirmPassword.trim()
+
+    if (isCreatorSuperadmin && password) {
+      if (password.length < 8) {
+        errors.password = "La contraseña debe tener al menos 8 caracteres"
+      } else if (!/[A-Z]/.test(password)) {
+        errors.password = "La contraseña debe incluir al menos una mayúscula"
+      } else if (!/[a-z]/.test(password)) {
+        errors.password = "La contraseña debe incluir al menos una minúscula"
+      } else if (!/\d/.test(password)) {
+        errors.password = "La contraseña debe incluir al menos un número"
+      } else if (!/[!@#$%^&*(),.?\":{}|<>]/.test(password)) {
+        errors.password = "La contraseña debe incluir al menos un carácter especial"
+      }
+
+      if (!confirmPassword) {
+        errors.confirmPassword = "Confirma la contraseña"
+      } else if (password !== confirmPassword) {
+        errors.confirmPassword = "Las contraseñas no coinciden"
+      }
+    }
+
     // Validar asignaciones según el rol
-    if (formData.role === "superadmin" || formData.role === "admin") {
-      // Acceso total: empresas opcionales
-    } else if (formData.role === "standard") {
+    if (formData.role === "admin") {
       if (formData.branchAccess.length === 0) {
-        errors.branchAccess = "Debe asignar al menos una empresa"
+        errors.branchAccess = "Debe asignar al menos una empresa al administrador"
+      }
+    } else if (formData.role !== "superadmin") {
+      if (formData.branchAccess.length === 0) {
+        errors.branchAccess = "Debe asignar al menos una empresa/sucursal"
+      }
+      if (formData.facilityAccess.length === 0) {
+        errors.facilityAccess = "Debe asignar al menos una instalación"
       }
     }
 
@@ -196,6 +284,7 @@ export default function UsersPage() {
       // Si cambia el rol, resetear asignaciones
       if (field === "role") {
         newData.branchAccess = []
+        newData.facilityAccess = []
       }
 
       // Si cambian las empresas
@@ -229,6 +318,10 @@ export default function UsersPage() {
         branchAccess: newBranchAccess,
       }
     })
+
+    if (formErrors.branchAccess) {
+      setFormErrors((prev) => ({ ...prev, branchAccess: "" }))
+    }
   }
 
   // Manejar cambios en el acceso a instalaciones
@@ -244,6 +337,10 @@ export default function UsersPage() {
         }
       }
     })
+
+    if (formErrors.facilityAccess) {
+      setFormErrors((prev) => ({ ...prev, facilityAccess: "" }))
+    }
   }
 
   // Crear nuevo usuario
@@ -252,12 +349,22 @@ export default function UsersPage() {
 
     try {
       const userData = {
-        ...formData,
-        // Solo incluir facilityAccess si es operador
-        // ...(formData.role === "operator" && { facilityAccess: formData.facilityAccess }), // Removed as per edit hint
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        status: formData.status,
+        branchAccess: formData.branchAccess,
+        facilityAccess: formData.facilityAccess,
+        phone: formData.phone,
+        department: formData.department,
+        notes: formData.notes,
+        ...(currentUser?.role === "superadmin" && formData.password.trim()
+          ? { password: formData.password.trim() }
+          : {}),
       }
 
-      await createUser(userData)
+      const created = await createUser(userData)
+      if (!created) return
       setAddUserOpen(false)
       resetForm()
       toast({
@@ -314,7 +421,8 @@ export default function UsersPage() {
     if (!selectedUser) return
 
     try {
-      await deleteUser(selectedUser.id)
+      const deleted = await deleteUser(selectedUser.id)
+      if (!deleted) return
       setDeleteDialogOpen(false)
       setSelectedUser(null)
       toast({
@@ -343,6 +451,8 @@ export default function UsersPage() {
       phone: user.phone || "",
       department: user.department || "",
       notes: user.notes || "",
+      password: "",
+      confirmPassword: "",
     })
     setFormErrors({})
     setEditUserOpen(true)
@@ -352,6 +462,72 @@ export default function UsersPage() {
   const openDeleteDialog = (user: User) => {
     setSelectedUser(user)
     setDeleteDialogOpen(true)
+  }
+
+  const resetPasswordForm = () => {
+    setPasswordForm({
+      password: "",
+      confirmPassword: "",
+    })
+    setShowNewPassword(false)
+    setShowNewPasswordConfirm(false)
+    setPasswordFormErrors({})
+  }
+
+  const openChangePasswordDialog = (user: User) => {
+    setPasswordTargetUser(user)
+    resetPasswordForm()
+    setChangePasswordOpen(true)
+  }
+
+  const validatePasswordForm = () => {
+    const errors: Record<string, string> = {}
+    const password = passwordForm.password.trim()
+    const confirm = passwordForm.confirmPassword.trim()
+
+    if (!password) {
+      errors.password = "La nueva contraseña es obligatoria"
+    } else if (password.length < 8) {
+      errors.password = "La contraseña debe tener al menos 8 caracteres"
+    } else if (!/[A-Z]/.test(password)) {
+      errors.password = "Debe incluir al menos una mayúscula"
+    } else if (!/[a-z]/.test(password)) {
+      errors.password = "Debe incluir al menos una minúscula"
+    } else if (!/\d/.test(password)) {
+      errors.password = "Debe incluir al menos un número"
+    } else if (!/[!@#$%^&*(),.?\":{}|<>]/.test(password)) {
+      errors.password = "Debe incluir al menos un carácter especial"
+    }
+
+    if (!confirm) {
+      errors.confirmPassword = "Debes confirmar la contraseña"
+    } else if (password !== confirm) {
+      errors.confirmPassword = "Las contraseñas no coinciden"
+    }
+
+    setPasswordFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleChangePassword = async () => {
+    if (!passwordTargetUser) return
+    if (!validatePasswordForm()) return
+
+    try {
+      setIsChangingPassword(true)
+      const changed = await changeUserPassword(passwordTargetUser.id, passwordForm.password.trim())
+      if (!changed) return
+
+      setChangePasswordOpen(false)
+      setPasswordTargetUser(null)
+      resetPasswordForm()
+      toast({
+        title: "Contraseña actualizada",
+        description: `La contraseña de ${passwordTargetUser.name} se cambió correctamente.`,
+      })
+    } finally {
+      setIsChangingPassword(false)
+    }
   }
 
   // Resetear formulario
@@ -366,7 +542,11 @@ export default function UsersPage() {
       phone: "",
       department: "",
       notes: "",
+      password: "",
+      confirmPassword: "",
     })
+    setShowPassword(false)
+    setShowConfirmPassword(false)
     setFormErrors({})
   }
 
@@ -392,11 +572,11 @@ export default function UsersPage() {
       case "superadmin":
         return "Acceso total (sistema)"
       case "admin":
-        return "Acceso completo"
+        return "Usuarios + empresas asignadas"
       case "standard":
-        return "Acceso básico a su área"
+        return "Solo instalaciones asignadas"
       case "operator":
-        return "Acceso a operaciones"
+        return "Solo instalaciones asignadas"
       default:
         return ""
     }
@@ -519,7 +699,7 @@ export default function UsersPage() {
 
       await updateUser({
         ...user,
-        role: newRole as "superadmin" | "admin" | "standard",
+        role: newRole as User["role"],
       })
 
       toast({
@@ -547,6 +727,8 @@ export default function UsersPage() {
       phone: user.phone || "",
       department: user.department || "",
       notes: user.notes || "",
+      password: "",
+      confirmPassword: "",
     })
     setFormErrors({})
     setAddUserOpen(true)
@@ -792,6 +974,10 @@ export default function UsersPage() {
                                 Enviar invitación
                               </DropdownMenuItem>
                             )}
+                            <DropdownMenuItem onClick={() => openChangePasswordDialog(user)}>
+                              <Key className="h-4 w-4 mr-2" />
+                              Cambiar contraseña
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleResetPassword(user.id)}>
                               <Key className="h-4 w-4 mr-2" />
                               Restablecer contraseña
@@ -905,6 +1091,66 @@ export default function UsersPage() {
                   </div>
                 </div>
 
+                {currentUser?.role === "superadmin" && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="password">Contraseña (opcional)</Label>
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          value={formData.password}
+                          onChange={(e) => handleFormChange("password", e.target.value)}
+                          placeholder="Si se deja vacío, se enviará recuperación"
+                          className={formErrors.password ? "border-red-500 pr-10" : "pr-10"}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1 h-7 w-7"
+                          onClick={() => setShowPassword((prev) => !prev)}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      {formErrors.password && (
+                        <p className="text-sm text-red-500 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {formErrors.password}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+                      <div className="relative">
+                        <Input
+                          id="confirmPassword"
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={formData.confirmPassword}
+                          onChange={(e) => handleFormChange("confirmPassword", e.target.value)}
+                          placeholder="Repite la contraseña"
+                          className={formErrors.confirmPassword ? "border-red-500 pr-10" : "pr-10"}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1 h-7 w-7"
+                          onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      {formErrors.confirmPassword && (
+                        <p className="text-sm text-red-500 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {formErrors.confirmPassword}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="role">
@@ -913,28 +1159,30 @@ export default function UsersPage() {
                     <Select
                       value={formData.role}
                       onValueChange={(value) =>
-                        handleFormChange("role", value as "superadmin" | "admin" | "standard")
+                        handleFormChange("role", value as User["role"])
                       }
                     >
                       <SelectTrigger id="role">
                         <SelectValue placeholder="Seleccionar rol" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="superadmin">
-                          <div className="flex items-center gap-2">
-                            <ShieldAlert className="h-4 w-4 text-red-500" />
-                            <div>
-                              <div>Superadmin</div>
-                              <div className="text-xs text-muted-foreground">Acceso total</div>
+                        {currentUser?.role === "superadmin" && (
+                          <SelectItem value="superadmin">
+                            <div className="flex items-center gap-2">
+                              <ShieldAlert className="h-4 w-4 text-red-500" />
+                              <div>
+                                <div>Superadmin</div>
+                                <div className="text-xs text-muted-foreground">Acceso total</div>
+                              </div>
                             </div>
-                          </div>
-                        </SelectItem>
+                          </SelectItem>
+                        )}
                         <SelectItem value="admin">
                           <div className="flex items-center gap-2">
                             <ShieldCheck className="h-4 w-4 text-blue-500" />
                             <div>
                               <div>Admin</div>
-                              <div className="text-xs text-muted-foreground">Acceso completo</div>
+                              <div className="text-xs text-muted-foreground">Usuarios + empresas asignadas</div>
                             </div>
                           </div>
                         </SelectItem>
@@ -942,8 +1190,17 @@ export default function UsersPage() {
                           <div className="flex items-center gap-2">
                             <Eye className="h-4 w-4 text-gray-500" />
                             <div>
-                              <div>Estandar</div>
-                              <div className="text-xs text-muted-foreground">Acceso básico</div>
+                              <div>Usuario</div>
+                              <div className="text-xs text-muted-foreground">Solo instalaciones asignadas</div>
+                            </div>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="operator">
+                          <div className="flex items-center gap-2">
+                            <Factory className="h-4 w-4 text-green-500" />
+                            <div>
+                              <div>Operador</div>
+                              <div className="text-xs text-muted-foreground">Solo instalaciones asignadas</div>
                             </div>
                           </div>
                         </SelectItem>
@@ -1002,7 +1259,7 @@ export default function UsersPage() {
                   <div className="grid gap-2">
                     <Label className="flex items-center gap-1">
                       <Building2 className="h-4 w-4" />
-                      Empresas asignadas {formData.role !== "admin" && <span className="text-red-500">*</span>}
+                      Empresas/sucursales asignadas <span className="text-red-500">*</span>
                     </Label>
                     <ScrollArea className="h-[120px] border rounded-md p-2">
                       {branches.length === 0 ? (
@@ -1032,17 +1289,13 @@ export default function UsersPage() {
                     )}
                   </div>
 
-                  {/* Instalaciones específicas para operadores */}
-                  {formData.role === "operator" && formData.branchAccess.length > 0 && (
+                  {/* Instalaciones específicas para roles restringidos */}
+                  {(formData.role === "operator" || formData.role === "standard" || formData.role === "viewer" || formData.role === "manager") && formData.branchAccess.length > 0 && (
                     <div className="grid gap-2">
                       <Label className="flex items-center gap-1">
                         <Factory className="h-4 w-4" />
-                        Instalaciones específicas (opcional)
+                        Instalaciones asignadas <span className="text-red-500">*</span>
                       </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Si no selecciona instalaciones, tendrá acceso a todas las instalaciones de las empresas
-                        asignadas.
-                      </p>
                       <ScrollArea className="h-[100px] border rounded-md p-2">
                         {getAvailableFacilities(formData.branchAccess).map((facility) => (
                           <div key={String(facility.id)} className="flex items-center space-x-2 py-1">
@@ -1060,6 +1313,11 @@ export default function UsersPage() {
                           </div>
                         ))}
                       </ScrollArea>
+                      {formErrors.facilityAccess && (
+                        <p className="text-sm text-red-500 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {formErrors.facilityAccess}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1169,28 +1427,30 @@ export default function UsersPage() {
                     <Select
                       value={formData.role}
                       onValueChange={(value) =>
-                        handleFormChange("role", value as "superadmin" | "admin" | "standard")
+                        handleFormChange("role", value as User["role"])
                       }
                     >
                       <SelectTrigger id="edit-role">
                         <SelectValue placeholder="Seleccionar rol" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="superadmin">
-                          <div className="flex items-center gap-2">
-                            <ShieldAlert className="h-4 w-4 text-red-500" />
-                            <div>
-                              <div>Superadmin</div>
-                              <div className="text-xs text-muted-foreground">Acceso total</div>
+                        {currentUser?.role === "superadmin" && (
+                          <SelectItem value="superadmin">
+                            <div className="flex items-center gap-2">
+                              <ShieldAlert className="h-4 w-4 text-red-500" />
+                              <div>
+                                <div>Superadmin</div>
+                                <div className="text-xs text-muted-foreground">Acceso total</div>
+                              </div>
                             </div>
-                          </div>
-                        </SelectItem>
+                          </SelectItem>
+                        )}
                         <SelectItem value="admin">
                           <div className="flex items-center gap-2">
                             <ShieldCheck className="h-4 w-4 text-blue-500" />
                             <div>
                               <div>Admin</div>
-                              <div className="text-xs text-muted-foreground">Acceso completo</div>
+                              <div className="text-xs text-muted-foreground">Usuarios + empresas asignadas</div>
                             </div>
                           </div>
                         </SelectItem>
@@ -1198,8 +1458,17 @@ export default function UsersPage() {
                           <div className="flex items-center gap-2">
                             <Eye className="h-4 w-4 text-gray-500" />
                             <div>
-                              <div>Estandar</div>
-                              <div className="text-xs text-muted-foreground">Acceso básico</div>
+                              <div>Usuario</div>
+                              <div className="text-xs text-muted-foreground">Solo instalaciones asignadas</div>
+                            </div>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="operator">
+                          <div className="flex items-center gap-2">
+                            <Factory className="h-4 w-4 text-green-500" />
+                            <div>
+                              <div>Operador</div>
+                              <div className="text-xs text-muted-foreground">Solo instalaciones asignadas</div>
                             </div>
                           </div>
                         </SelectItem>
@@ -1258,7 +1527,7 @@ export default function UsersPage() {
                   <div className="grid gap-2">
                     <Label className="flex items-center gap-1">
                       <Building2 className="h-4 w-4" />
-                      Empresas asignadas {formData.role !== "admin" && <span className="text-red-500">*</span>}
+                      Empresas/sucursales asignadas <span className="text-red-500">*</span>
                     </Label>
                     <ScrollArea className="h-[120px] border rounded-md p-2">
                       {branches.length === 0 ? (
@@ -1288,17 +1557,13 @@ export default function UsersPage() {
                     )}
                   </div>
 
-                  {/* Instalaciones específicas para operadores */}
-                  {formData.role === "operator" && formData.branchAccess.length > 0 && (
+                  {/* Instalaciones específicas para roles restringidos */}
+                  {(formData.role === "operator" || formData.role === "standard" || formData.role === "viewer" || formData.role === "manager") && formData.branchAccess.length > 0 && (
                     <div className="grid gap-2">
                       <Label className="flex items-center gap-1">
                         <Factory className="h-4 w-4" />
-                        Instalaciones específicas (opcional)
+                        Instalaciones asignadas <span className="text-red-500">*</span>
                       </Label>
-                      <p className="text-xs text-muted-foreground">
-                        Si no selecciona instalaciones, tendrá acceso a todas las instalaciones de las empresas
-                        asignadas.
-                      </p>
                       <ScrollArea className="h-[100px] border rounded-md p-2">
                         {getAvailableFacilities(formData.branchAccess).map((facility) => (
                           <div key={String(facility.id)} className="flex items-center space-x-2 py-1">
@@ -1319,6 +1584,11 @@ export default function UsersPage() {
                           </div>
                         ))}
                       </ScrollArea>
+                      {formErrors.facilityAccess && (
+                        <p className="text-sm text-red-500 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {formErrors.facilityAccess}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1341,6 +1611,134 @@ export default function UsersPage() {
                 Cancelar
               </Button>
               <Button onClick={handleUpdateUser}>Guardar Cambios</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Diálogo para cambiar contraseña */}
+        <Dialog
+          open={changePasswordOpen}
+          onOpenChange={(open) => {
+            setChangePasswordOpen(open)
+            if (!open) {
+              setPasswordTargetUser(null)
+              resetPasswordForm()
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Cambiar contraseña</DialogTitle>
+              <DialogDescription>
+                {passwordTargetUser
+                  ? `Define una nueva contraseña para ${passwordTargetUser.name}.`
+                  : "Define una nueva contraseña para el usuario."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-2">
+              <Alert>
+                <ShieldX className="h-4 w-4" />
+                <AlertDescription>
+                  La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula, un número y un carácter especial.
+                </AlertDescription>
+              </Alert>
+
+              <div className="grid gap-2">
+                <Label htmlFor="change-password" className="flex items-center gap-1">
+                  Nueva contraseña <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="change-password"
+                    type={showNewPassword ? "text" : "password"}
+                    value={passwordForm.password}
+                    onChange={(e) => {
+                      setPasswordForm((prev) => ({ ...prev, password: e.target.value }))
+                      if (passwordFormErrors.password) {
+                        setPasswordFormErrors((prev) => ({ ...prev, password: "" }))
+                      }
+                    }}
+                    placeholder="Nueva contraseña"
+                    className={passwordFormErrors.password ? "border-red-500 pr-10" : "pr-10"}
+                    disabled={isChangingPassword}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 h-7 w-7"
+                    onClick={() => setShowNewPassword((prev) => !prev)}
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+                {passwordFormErrors.password && (
+                  <p className="text-sm text-red-500 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> {passwordFormErrors.password}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="change-password-confirm" className="flex items-center gap-1">
+                  Confirmar contraseña <span className="text-red-500">*</span>
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="change-password-confirm"
+                    type={showNewPasswordConfirm ? "text" : "password"}
+                    value={passwordForm.confirmPassword}
+                    onChange={(e) => {
+                      setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))
+                      if (passwordFormErrors.confirmPassword) {
+                        setPasswordFormErrors((prev) => ({ ...prev, confirmPassword: "" }))
+                      }
+                    }}
+                    placeholder="Confirmar contraseña"
+                    className={passwordFormErrors.confirmPassword ? "border-red-500 pr-10" : "pr-10"}
+                    disabled={isChangingPassword}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 h-7 w-7"
+                    onClick={() => setShowNewPasswordConfirm((prev) => !prev)}
+                  >
+                    {showNewPasswordConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+                {passwordFormErrors.confirmPassword && (
+                  <p className="text-sm text-red-500 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> {passwordFormErrors.confirmPassword}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setChangePasswordOpen(false)
+                  setPasswordTargetUser(null)
+                  resetPasswordForm()
+                }}
+                disabled={isChangingPassword}
+              >
+                Cancelar
+              </Button>
+              <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+                {isChangingPassword ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  "Guardar contraseña"
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

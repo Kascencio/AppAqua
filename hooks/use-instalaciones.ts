@@ -47,12 +47,14 @@ export function useInstalaciones(options: UseInstalacionesOptions = {}): UseInst
     setLoading(true)
     setError(null)
     try {
-      const res = await backendApi.getInstalaciones({
+      const params: { page: number; limit: number; id_sucursal?: number; activo?: boolean } = {
         page,
         limit,
-        id_sucursal: options.id_sucursal,
-        activo: options.activo,
-      })
+      }
+      if (options.id_sucursal !== undefined) params.id_sucursal = options.id_sucursal
+      if (options.activo !== undefined) params.activo = options.activo
+
+      const res = await backendApi.getInstalaciones(params)
       const payload = res as any
       const items: Instalacion[] = Array.isArray(payload) ? payload : (payload.data || [])
       setInstalaciones(items)

@@ -84,12 +84,6 @@ function Sidebar({ className }: SidebarProps) {
       roles: ["superadmin", "admin", "standard"],
     },
     {
-      href: "/monitoreo",
-      icon: Activity,
-      title: "Monitoreo",
-      roles: ["superadmin", "admin", "standard"],
-    },
-    {
       href: "/analytics",
       icon: BarChart3,
       title: "Analítica",
@@ -117,7 +111,7 @@ function Sidebar({ className }: SidebarProps) {
       href: "/users/roles",
       icon: Shield,
       title: "Tipos de Usuario",
-      roles: ["superadmin", "admin"], // superadmin/admin gestionan tipos de usuario
+      roles: ["superadmin"], // Solo superadmin gestiona tipos de usuario
     },
   ]
 
@@ -185,7 +179,7 @@ function Sidebar({ className }: SidebarProps) {
       case "superadmin":
         return "Acceso total (sistema)"
       case "admin":
-        return "Acceso completo"
+        return "Acceso a empresas/instalaciones asignadas"
       case "standard":
         const branchCount = user.branchAccess?.length || 0
         return branchCount > 0

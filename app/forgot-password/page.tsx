@@ -44,13 +44,13 @@ export default function ForgotPasswordPage() {
             </div>
             <CardTitle className="text-2xl font-bold text-green-600">¡Solicitud Enviada!</CardTitle>
             <CardDescription>
-              Revisa tu email para continuar
+              Revisa tu correo o Telegram para continuar
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="text-sm text-muted-foreground">
               Si el email <strong>{email}</strong> existe en nuestro sistema, 
-              recibirás un enlace para restablecer tu contraseña.
+              recibirás un enlace para restablecer tu contraseña por correo; si no está configurado, se enviará por Telegram.
             </p>
             <p className="text-xs text-muted-foreground">
               El enlace expirará en 1 hora por seguridad.
@@ -91,7 +91,7 @@ export default function ForgotPasswordPage() {
           </div>
           <CardTitle className="text-2xl font-bold">Recuperar Contraseña</CardTitle>
           <CardDescription>
-            Ingresa tu email para recibir un enlace de recuperación
+            Ingresa tu email para recibir un enlace de recuperación (correo o Telegram)
           </CardDescription>
         </CardHeader>
         <CardContent>

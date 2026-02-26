@@ -14,13 +14,8 @@ const nextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        // Proxy para todos los API calls al backend externo
         {
-          source: '/api/:path*',
-          destination: `${EXTERNAL_BACKEND_URL}/api/:path*`,
-        },
-        {
-          // Proxy alterno para el backend externo (evita conflicto con route handlers locales en /api/*)
+          // Proxy para backend externo sin interferir con route handlers locales en /api/*
           source: '/external-api/:path*',
           destination: `${EXTERNAL_BACKEND_URL}/api/:path*`,
         },

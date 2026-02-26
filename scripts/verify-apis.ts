@@ -20,7 +20,7 @@ async function main() {
     }
 
     const loginData = await loginRes.json();
-    const token = loginData.tokens?.accessToken;
+    const token = loginData.token;
 
     if (!token) {
         console.error('❌ Login succeeded but no token returned');

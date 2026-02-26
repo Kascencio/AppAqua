@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Plus, Edit, Trash2, Shield, Users, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -23,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { ROLE_PERMISSIONS, USER_ROLES } from "@/lib/auth-utils"
+import { useAuth } from "@/context/auth-context"
 
 interface TipoRol {
   id_rol: number
@@ -121,6 +123,8 @@ const PERMISSION_GROUPS: PermissionGroup[] = [
 ]
 
 export default function RolesPage() {
+  const router = useRouter()
+  const { user, isLoading: authLoading } = useAuth()
   const [roles, setRoles] = useState<TipoRol[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -132,7 +136,21 @@ export default function RolesPage() {
   const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set())
   const { toast } = useToast()
 
+  const canAccessRoles = user?.role === "superadmin"
+
+  useEffect(() => {
+    if (!authLoading && !canAccessRoles) {
+      router.replace("/")
+    }
+  }, [authLoading, canAccessRoles, router])
+
   const fetchRoles = useCallback(async () => {
+    if (!canAccessRoles) {
+      setRoles([])
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
       setError(null)
@@ -169,11 +187,17 @@ export default function RolesPage() {
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, canAccessRoles])
 
   useEffect(() => {
-    fetchRoles()
-  }, [fetchRoles])
+    if (!authLoading) {
+      fetchRoles()
+    }
+  }, [fetchRoles, authLoading])
+
+  if (authLoading || !canAccessRoles) {
+    return null
+  }
 
   const handleAddRole = () => {
     setRoleName("")
@@ -213,7 +237,7 @@ export default function RolesPage() {
 
       if (selectedRole) {
         // Editar rol
-        const response = await fetch(`/api/roles?id=${selectedRole.id_rol}`, {
+        const response = await fetch(`/api/roles/${selectedRole.id_rol}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -274,7 +298,7 @@ export default function RolesPage() {
         .find(c => c.trim().startsWith('access_token='))
         ?.split('=')[1] || localStorage.getItem('access_token')
 
-      const response = await fetch(`/api/roles?id=${selectedRole.id_rol}`, {
+      const response = await fetch(`/api/roles/${selectedRole.id_rol}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -521,6 +545,4 @@ export default function RolesPage() {
     </div>
   )
 }
-
-
 

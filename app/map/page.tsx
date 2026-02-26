@@ -25,6 +25,8 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  Factory,
+  GitBranch,
 } from "lucide-react"
 
 export default function MapPage() {
@@ -37,6 +39,8 @@ export default function MapPage() {
   // Usar AppContext
   const context = useAppContext()
   const empresasSucursales = context?.empresasSucursales ?? []
+  const instalaciones = context?.instalaciones ?? []
+  const procesos = context?.procesos ?? []
   const isLoading = context?.isLoading ?? false
   const error = context?.error ?? null
   const refreshData = context?.refreshData ?? (async () => {})
@@ -51,12 +55,70 @@ export default function MapPage() {
     return counts
   }, [empresasSucursales])
   
+  const isProcesoActivo = (proceso: any) => {
+    const normalized = String(proceso?.estado_proceso ?? proceso?.estado ?? "").toLowerCase()
+    return normalized === "activo" || normalized === "en_progreso"
+  }
+
+  const procesosByInstalacion = useMemo(() => {
+    const grouped = new Map<number, { total: number; activos: number; especies: Set<string> }>()
+
+    for (const proceso of procesos) {
+      const idInstalacion = Number((proceso as any).id_instalacion ?? 0)
+      if (!Number.isFinite(idInstalacion) || idInstalacion <= 0) continue
+
+      const current = grouped.get(idInstalacion) ?? { total: 0, activos: 0, especies: new Set<string>() }
+      current.total += 1
+      if (isProcesoActivo(proceso)) current.activos += 1
+      const especie = String((proceso as any).nombre_especie ?? "").trim()
+      if (especie) current.especies.add(especie)
+      grouped.set(idInstalacion, current)
+    }
+
+    return grouped
+  }, [procesos])
+
+  const facilitiesByBranch = useMemo(() => {
+    const grouped = new Map<number, NonNullable<Branch["facilities"]>>()
+
+    for (const instalacion of instalaciones) {
+      const branchId = Number((instalacion as any).id_empresa_sucursal ?? 0)
+      if (!Number.isFinite(branchId) || branchId <= 0) continue
+
+      const procesoInfo = procesosByInstalacion.get(Number(instalacion.id_instalacion))
+      const speciesLabel = procesoInfo?.especies?.size ? [...procesoInfo.especies].join(", ") : undefined
+
+      const facility = {
+        id: instalacion.id_instalacion,
+        name: String(instalacion.nombre_instalacion ?? `Instalación ${instalacion.id_instalacion}`),
+        type: String(instalacion.tipo_uso ?? "acuicultura"),
+        status: instalacion.estado_operativo === "activo" ? "active" : "inactive",
+        description: instalacion.descripcion ?? undefined,
+        capacity: instalacion.capacidad_maxima ?? undefined,
+        process_total: procesoInfo?.total ?? 0,
+        process_active: procesoInfo?.activos ?? 0,
+        species: speciesLabel,
+        sensors: [],
+        parameters: [],
+      }
+
+      const current = grouped.get(branchId) ?? []
+      grouped.set(branchId, [...current, facility])
+    }
+
+    return grouped
+  }, [instalaciones, procesosByInstalacion])
+
   // Calcular estadísticas manualmente
   const stats = {
     totalEmpresas: empresasSucursales.filter((e: any) => e.tipo === "empresa").length,
     totalSucursales: empresasSucursales.filter((e: any) => e.tipo === "sucursal").length,
     empresasActivas: empresasSucursales.filter((e: any) => e.estado_operativo === "activa").length,
     sucursalesActivas: empresasSucursales.filter((e: any) => e.tipo === "sucursal" && e.estado_operativo === "activa").length,
+    totalInstalaciones: instalaciones.length,
+    instalacionesActivas: instalaciones.filter((inst: any) => inst.estado_operativo === "activo").length,
+    totalProcesos: procesos.length,
+    procesosActivos: procesos.filter((proceso: any) => isProcesoActivo(proceso)).length,
     porEstado,
   }
 
@@ -76,13 +138,28 @@ export default function MapPage() {
     })
   }, [empresasSucursales, searchTerm, filterTipo, filterEstado, showInactivas])
 
+  const resolveCoordinates = (entity: any): { lat: number; lng: number } => {
+    const latRaw = entity.latitud ?? entity.latitude ?? entity.location?.lat
+    const lngRaw = entity.longitud ?? entity.longitude ?? entity.location?.lng
+    const lat = Number(latRaw)
+    const lng = Number(lngRaw)
+
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng }
+    }
+
+    const stableOffset = Number(entity.id_empresa_sucursal ?? entity.id ?? 1) % 25
+    return {
+      lat: 17.9869 + stableOffset * 0.0025,
+      lng: -92.9303 - stableOffset * 0.0025,
+    }
+  }
+
   // Preparar datos para el mapa
   const mapData = useMemo<Branch[]>(() => {
-    return filteredEmpresas.map((empresa, index) => {
-      // Mock coordinates based on index/id to spread them out
-      // Base center: 17.9869, -92.9303 (Villahermosa roughly)
-      const lat = 17.9869 + (Math.random() - 0.5) * 0.1
-      const lng = -92.9303 + (Math.random() - 0.5) * 0.1
+    return filteredEmpresas.map((empresa) => {
+      const { lat, lng } = resolveCoordinates(empresa)
+      const facilities = facilitiesByBranch.get(empresa.id_empresa_sucursal) ?? []
       
       return {
         ...empresa,
@@ -104,10 +181,15 @@ export default function MapPage() {
         },
         coordinates: [lat, lng],
         location: { lat, lng },
-        facilities: [],
+        facilities,
       }
     })
-  }, [filteredEmpresas])
+  }, [filteredEmpresas, facilitiesByBranch])
+
+  const selectedFacilities = useMemo(() => {
+    if (!selectedEmpresa) return []
+    return facilitiesByBranch.get(selectedEmpresa.id_empresa_sucursal) ?? []
+  }, [selectedEmpresa, facilitiesByBranch])
 
   const handleEmpresaSelect = (empresa: EmpresaSucursalCompleta) => {
     setSelectedEmpresa(empresa)
@@ -174,7 +256,7 @@ export default function MapPage() {
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Empresas</CardTitle>
@@ -216,6 +298,28 @@ export default function MapPage() {
             <CardContent>
               <div className="text-2xl font-bold">{Object.keys(stats.porEstado || {}).length}</div>
               <p className="text-xs text-muted-foreground">Cobertura geográfica</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Instalaciones</CardTitle>
+              <Factory className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalInstalaciones}</div>
+              <p className="text-xs text-muted-foreground">{stats.instalacionesActivas} activas</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Procesos</CardTitle>
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalProcesos}</div>
+              <p className="text-xs text-muted-foreground">{stats.procesosActivos} activos</p>
             </CardContent>
           </Card>
         </div>
@@ -289,6 +393,8 @@ export default function MapPage() {
             <span>
               Mostrando {filteredEmpresas.length} de {empresasSucursales.length} ubicaciones
             </span>
+            <span>•</span>
+            <span>{instalaciones.length} instalaciones vinculadas</span>
           </div>
         </CardContent>
       </Card>
@@ -349,6 +455,19 @@ export default function MapPage() {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-md border p-2">
+                    <p className="text-xs text-muted-foreground">Instalaciones</p>
+                    <p className="text-lg font-semibold">{selectedFacilities.length}</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-xs text-muted-foreground">Procesos activos</p>
+                    <p className="text-lg font-semibold">
+                      {selectedFacilities.reduce((total, facility: any) => total + Number(facility.process_active ?? 0), 0)}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
@@ -389,6 +508,27 @@ export default function MapPage() {
                     </div>
                   )}
                 </div>
+
+                {selectedFacilities.length > 0 && (
+                  <div className="space-y-2 border-t pt-3">
+                    <p className="text-xs font-medium text-muted-foreground">Instalaciones enlazadas</p>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {selectedFacilities.slice(0, 5).map((facility: any) => (
+                        <div key={facility.id} className="rounded-md border p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium truncate">{String(facility.name)}</p>
+                            <Badge variant={facility.status === "active" ? "default" : "secondary"}>
+                              {facility.status === "active" ? "Activa" : "Inactiva"}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Procesos: {Number(facility.process_active ?? 0)} activos / {Number(facility.process_total ?? 0)} total
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -432,6 +572,9 @@ export default function MapPage() {
                         <p className="text-sm font-medium truncate">{empresa.nombre}</p>
                         <p className="text-xs text-muted-foreground truncate">
                           {empresa.nombre_colonia}, {empresa.nombre_estado}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {facilitiesByBranch.get(empresa.id_empresa_sucursal)?.length ?? 0} instalaciones
                         </p>
                       </div>
                       <Badge

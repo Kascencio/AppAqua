@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,24 +11,24 @@ import { useToast } from "@/hooks/use-toast"
 import { useAppContext } from "@/context/app-context"
 import { useSearchParams } from "next/navigation"
 import { PageHeader } from "@/components/page-header"
+import { api } from "@/lib/api"
+import { useAuth } from "@/context/auth-context"
 
 export default function NotificationsPage() {
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all")
-  const [localAlerts, setLocalAlerts] = useState<any[]>([])
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false)
+  const [processingIds, setProcessingIds] = useState<number[]>([])
   const { toast } = useToast()
   const searchParams = useSearchParams()
+  const { user } = useAuth()
 
-  // Usar el contexto global
   const context = useAppContext()
   const contextAlerts = context?.alerts ?? []
   const isLoading = context?.isLoading ?? false
-  
-  // Sync context alerts to local state
-  useEffect(() => {
-    setLocalAlerts(contextAlerts)
-  }, [contextAlerts])
+  const refreshData = context?.refreshData
 
-  // Aplicar filtro de URL si existe
+  const canDeleteAlerts = user?.role === "superadmin" || user?.role === "admin"
+
   useEffect(() => {
     const statusFilter = searchParams.get("status")
     if (statusFilter === "unread") {
@@ -39,6 +39,183 @@ export default function NotificationsPage() {
       setFilter("all")
     }
   }, [searchParams])
+
+  const localAlerts = useMemo(() => {
+    const dedup = new Map<number, any>()
+
+    for (const rawAlert of contextAlerts) {
+      const id = Number((rawAlert as any)?.id_alertas ?? (rawAlert as any)?.id_alerta)
+      if (!Number.isFinite(id) || id <= 0) continue
+
+      const current = dedup.get(id)
+      const read = typeof (rawAlert as any)?.read === "boolean"
+        ? Boolean((rawAlert as any).read)
+        : Boolean((rawAlert as any)?.leida)
+
+      const next = {
+        ...(current || {}),
+        ...(rawAlert as any),
+        id_alertas: id,
+        id_alerta: id,
+        read,
+        leida: read,
+      }
+      dedup.set(id, next)
+    }
+
+    return Array.from(dedup.values()).sort((a, b) => Number(b.id_alertas) - Number(a.id_alertas))
+  }, [contextAlerts])
+
+  const filteredAlerts = useMemo(
+    () =>
+      localAlerts.filter((alert: any) => {
+        if (filter === "all") return true
+        if (filter === "unread") return !alert.read
+        if (filter === "read") return alert.read
+        return true
+      }),
+    [filter, localAlerts],
+  )
+
+  const unreadCount = useMemo(
+    () => localAlerts.filter((alert: any) => !alert.read).length,
+    [localAlerts],
+  )
+
+  const markIdAsProcessing = (id: number) => {
+    setProcessingIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+  }
+
+  const unmarkIdAsProcessing = (id: number) => {
+    setProcessingIds((prev) => prev.filter((item) => item !== id))
+  }
+
+  const refreshAlerts = async () => {
+    await refreshData?.({ silent: true, force: true })
+  }
+
+  const markAsRead = async (id: number) => {
+    if (processingIds.includes(id)) return
+
+    markIdAsProcessing(id)
+    try {
+      await api.put(`/alertas/${id}/read`, { read: true })
+      await refreshAlerts()
+
+      toast({
+        title: "Notificación marcada como leída",
+        description: "La notificación se guardó como leída en la base de datos.",
+        duration: 2500,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo marcar la notificación como leída.",
+        variant: "destructive",
+      })
+    } finally {
+      unmarkIdAsProcessing(id)
+    }
+  }
+
+  const markAllAsRead = async () => {
+    const ids = localAlerts
+      .filter((alert: any) => !alert.read)
+      .map((alert: any) => Number(alert.id_alertas))
+      .filter((id: number) => Number.isFinite(id) && id > 0)
+
+    if (ids.length === 0) return
+
+    setIsBulkProcessing(true)
+    try {
+      await api.put("/alertas/read-all", { read: true, ids })
+      await refreshAlerts()
+
+      toast({
+        title: "Notificaciones actualizadas",
+        description: "Todas las notificaciones quedaron marcadas como leídas en la base de datos.",
+        duration: 2500,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudieron marcar todas como leídas.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBulkProcessing(false)
+    }
+  }
+
+  const deleteNotification = async (id: number) => {
+    if (!canDeleteAlerts) {
+      toast({
+        title: "Sin permisos",
+        description: "Tu rol no tiene permiso para eliminar alertas.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (processingIds.includes(id)) return
+
+    markIdAsProcessing(id)
+    try {
+      await api.delete(`/alertas/${id}`)
+      await refreshAlerts()
+
+      toast({
+        title: "Notificación eliminada",
+        description: "La alerta fue eliminada de forma persistente en la base de datos.",
+        duration: 2500,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo eliminar la notificación.",
+        variant: "destructive",
+      })
+    } finally {
+      unmarkIdAsProcessing(id)
+    }
+  }
+
+  const clearAllNotifications = async () => {
+    if (!canDeleteAlerts) {
+      toast({
+        title: "Sin permisos",
+        description: "Tu rol no tiene permiso para eliminar alertas.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const ids = localAlerts
+      .map((alert: any) => Number(alert.id_alertas))
+      .filter((id: number) => Number.isFinite(id) && id > 0)
+
+    if (ids.length === 0) return
+
+    setIsBulkProcessing(true)
+    try {
+      await api.post("/alertas/delete-all", { ids })
+      await refreshAlerts()
+
+      toast({
+        title: "Notificaciones eliminadas",
+        description: "Todas las notificaciones fueron eliminadas de forma persistente.",
+        duration: 2500,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudieron eliminar todas las notificaciones.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBulkProcessing(false)
+    }
+  }
 
   const getParameterIcon = (parameter?: string) => {
     if (!parameter) return <Droplets className="h-4 w-4 text-gray-500" />
@@ -83,58 +260,6 @@ export default function NotificationsPage() {
     return Math.floor(seconds) + " segundos"
   }
 
-  const markAsRead = (id: number) => {
-    const updatedAlerts = localAlerts.map((alert: any) => (alert.id_alertas === id ? { ...alert, read: true } : alert))
-    setLocalAlerts(updatedAlerts)
-
-    toast({
-      title: "Notificación marcada como leída",
-      description: "La notificación ha sido marcada como leída correctamente.",
-      duration: 3000,
-    })
-  }
-
-  const markAllAsRead = () => {
-    const updatedAlerts = localAlerts.map((alert: any) => ({ ...alert, read: true }))
-    setLocalAlerts(updatedAlerts)
-    
-    toast({
-      title: "Todas las notificaciones marcadas como leídas",
-      description: "Todas las notificaciones han sido marcadas como leídas correctamente.",
-      duration: 3000,
-    })
-  }
-
-  const deleteNotification = (id: number) => {
-    const updatedAlerts = localAlerts.filter((alert: any) => alert.id_alertas !== id)
-    setLocalAlerts(updatedAlerts)
-    
-    toast({
-      title: "Notificación eliminada",
-      description: "La notificación ha sido eliminada correctamente.",
-      duration: 3000,
-    })
-  }
-
-  const clearAllNotifications = () => {
-    setLocalAlerts([])
-    
-    toast({
-      title: "Todas las notificaciones eliminadas",
-      description: "Todas las notificaciones han sido eliminadas correctamente.",
-      duration: 3000,
-    })
-  }
-
-  const filteredAlerts = localAlerts.filter((alert: any) => {
-    if (filter === "all") return true
-    if (filter === "unread") return !alert.read
-    if (filter === "read") return alert.read
-    return true
-  })
-
-  const unreadCount = localAlerts.filter((alert: any) => !alert.read).length
-
   if (isLoading) {
     return (
       <div className="container py-6 max-w-7xl mx-auto">
@@ -166,10 +291,15 @@ export default function NotificationsPage() {
                 <DropdownMenuItem onClick={() => setFilter("read")}>Leídas</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" onClick={markAllAsRead}>
+            <Button variant="outline" size="sm" onClick={() => void markAllAsRead()} disabled={isBulkProcessing || unreadCount === 0}>
               Marcar todas como leídas
             </Button>
-            <Button variant="destructive" size="sm" onClick={clearAllNotifications}>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void clearAllNotifications()}
+              disabled={isBulkProcessing || localAlerts.length === 0 || !canDeleteAlerts}
+            >
               Borrar todas
             </Button>
           </div>
@@ -211,25 +341,35 @@ export default function NotificationsPage() {
                 filteredAlerts.map((alert) => (
                   <div
                     key={alert.id_alertas}
-                    className={`flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted`}
+                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted"
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
                       <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Recibida hace {formatTimeAgo(alert.fecha)}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Recibida hace {formatTimeAgo(alert.fecha)}</p>
                     </div>
                     <div className="flex items-center space-x-2">
                       {!alert.read && (
-                        <Button variant="outline" size="sm" onClick={() => markAsRead(alert.id_alertas)}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void markAsRead(alert.id_alertas)}
+                          disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
+                        >
                           Marcar como leída
                         </Button>
                       )}
-                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id_alertas)}>
-                        Eliminar
-                      </Button>
+                      {canDeleteAlerts && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void deleteNotification(alert.id_alertas)}
+                          disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
+                        >
+                          Eliminar
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -254,23 +394,33 @@ export default function NotificationsPage() {
                 filteredAlerts.map((alert) => (
                   <div
                     key={alert.id_alertas}
-                    className={`flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted`}
+                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted"
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
                       <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Recibida hace {formatTimeAgo(alert.fecha)}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Recibida hace {formatTimeAgo(alert.fecha)}</p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => markAsRead(alert.id_alertas)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void markAsRead(alert.id_alertas)}
+                        disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
+                      >
                         Marcar como leída
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id_alertas)}>
-                        Eliminar
-                      </Button>
+                      {canDeleteAlerts && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void deleteNotification(alert.id_alertas)}
+                          disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
+                        >
+                          Eliminar
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))
@@ -295,20 +445,25 @@ export default function NotificationsPage() {
                 filteredAlerts.map((alert) => (
                   <div
                     key={alert.id_alertas}
-                    className={`flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted`}
+                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted"
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
                       <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Recibida hace {formatTimeAgo(alert.fecha)}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Recibida hace {formatTimeAgo(alert.fecha)}</p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button variant="destructive" size="sm" onClick={() => deleteNotification(alert.id_alertas)}>
-                        Eliminar
-                      </Button>
+                      {canDeleteAlerts && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void deleteNotification(alert.id_alertas)}
+                          disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
+                        >
+                          Eliminar
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))

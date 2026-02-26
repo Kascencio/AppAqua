@@ -324,6 +324,13 @@ export class SecurityLogger {
   static logPasswordChange(userId: number, ip: string): void {
     console.info(`[SECURITY] Password changed for user ${userId} from ${ip}`)
   }
+
+  /**
+   * Registra solicitud de recuperación de contraseña
+   */
+  static logPasswordRecoveryRequested(userId: number, ip: string): void {
+    console.info(`[SECURITY] Password recovery requested for user ${userId} from ${ip}`)
+  }
 }
 
 // Configuración de roles

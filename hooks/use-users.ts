@@ -14,21 +14,44 @@ interface UsuarioAPI {
   estado: string
   fecha_creacion: string
   fecha_actualizacion?: string
+  role?: string
+  status?: string
+  branchAccess?: Array<string | number>
+  facilityAccess?: Array<string | number>
   tipo_rol: {
     id_rol: number
     nombre: string
   }
 }
 
+interface RolAPI {
+  id_rol: number
+  nombre: string
+}
+
+interface CreateUserInput extends Omit<User, "id" | "createdAt"> {
+  password?: string
+}
+
+interface UpdateUserInput extends User {
+  password?: string
+}
+
 // Función auxiliar para obtener roles disponibles
 async function obtenerRoles(): Promise<Record<string, number>> {
   try {
-    const usuarios = await api.get<UsuarioAPI[]>("/usuarios")
+    const roles = await api.get<RolAPI[]>("/roles")
 
     const roleMap: Record<string, number> = {}
-    usuarios.forEach(usuario => {
-      const roleName = usuario.tipo_rol.nombre.toLowerCase()
-      roleMap[roleName] = usuario.tipo_rol.id_rol
+    roles.forEach((rol) => {
+      const roleName = String(rol.nombre || "").toLowerCase()
+      roleMap[roleName] = rol.id_rol
+      if (roleName.includes("superadmin")) roleMap.superadmin = rol.id_rol
+      else if (roleName.includes("admin")) roleMap.admin = rol.id_rol
+      else if (roleName.includes("operator") || roleName.includes("operador")) roleMap.operator = rol.id_rol
+      else if (roleName.includes("manager") || roleName.includes("gerente")) roleMap.manager = rol.id_rol
+      else if (roleName.includes("viewer") || roleName.includes("lector")) roleMap.viewer = rol.id_rol
+      else if (roleName.includes("standard") || roleName.includes("user") || roleName.includes("usuario")) roleMap.standard = rol.id_rol
     })
 
     // Ensure we have at least defaults if map is empty (e.g. no users yet)
@@ -36,7 +59,7 @@ async function obtenerRoles(): Promise<Record<string, number>> {
       return {
         superadmin: 1,
         admin: 2,
-        standard: 3
+        standard: 3,
       }
     }
 
@@ -98,14 +121,25 @@ function convertirUsuarioAPI(usuario: UsuarioAPI): User {
     }
   }
 
+  const apiRole = usuario.role?.toLowerCase() || ""
+  const dbRole = usuario.tipo_rol?.nombre?.toLowerCase() || ""
+  const rawRole = apiRole || dbRole
+  let role: User["role"] = "standard"
+  if (rawRole.includes("superadmin")) role = "superadmin"
+  else if (rawRole.includes("admin")) role = "admin"
+  else if (rawRole.includes("operator")) role = "operator"
+  else if (rawRole.includes("manager")) role = "manager"
+  else if (rawRole.includes("viewer")) role = "viewer"
+
   return {
     id: usuario.id_usuario,
     name: usuario.nombre_completo,
     email: usuario.correo,
-    role: usuario.tipo_rol.nombre.toLowerCase() as "superadmin" | "admin" | "standard",
-    status: mapStatus(usuario.estado),
+    role,
+    status: mapStatus(usuario.status || usuario.estado),
     phone: usuario.telefono || undefined,
-    branchAccess: [], // Por ahora vacío, se puede implementar después
+    branchAccess: Array.isArray(usuario.branchAccess) ? usuario.branchAccess : [],
+    facilityAccess: Array.isArray(usuario.facilityAccess) ? usuario.facilityAccess : [],
     createdAt: usuario.fecha_creacion,
     updatedAt: usuario.fecha_actualizacion,
   }
@@ -137,52 +171,59 @@ export function useUsers() {
     }
   }, [toast])
 
-  const createUser = useCallback(async (userData: Omit<User, "id" | "createdAt">) => {
+  const createUser = useCallback(async (userData: CreateUserInput) => {
     try {
       setLoading(true)
 
       // Obtener roles disponibles primero
       const roleMap = await obtenerRoles()
-      const roleId = roleMap[userData.role] || (userData.role === 'admin' ? 2 : userData.role === 'superadmin' ? 1 : 3)
+      const roleId =
+        roleMap[userData.role] ||
+        roleMap.standard ||
+        roleMap.user ||
+        roleMap.admin ||
+        roleMap.superadmin ||
+        1
 
-      // Generar contraseña temporal segura
+      const providedPassword = typeof userData.password === "string" ? userData.password.trim() : ""
       const tempPassword = generateSecurePassword(12)
+      const passwordToUse = providedPassword || tempPassword
 
       // Convertir datos del tipo User a formato de API
       const apiData = {
         nombre_completo: userData.name,
         correo: userData.email,
         telefono: userData.phone || null,
-        password: tempPassword,
+        password: passwordToUse,
         estado: mapStatusToAPI(userData.status),
         id_rol: roleId,
+        role: userData.role,
+        branchAccess: userData.branchAccess || [],
+        facilityAccess: userData.facilityAccess || [],
       }
 
       await api.post("/usuarios", apiData)
 
-      // Intentar enviar email de bienvenida con link de reset
-      try {
-        const baseUrl = typeof window !== "undefined" ? window.location.origin : ""
-        const resetToken = btoa(JSON.stringify({ email: userData.email, exp: Date.now() + 86400000 })) // 24h
-        const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
-        
-        await fetch("/api/send-reset-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: userData.email,
-            resetUrl,
-            userName: userData.name,
-          }),
-        })
-      } catch {
-        // Si falla el envío de email, no es crítico
-        console.warn("No se pudo enviar email de bienvenida")
+      if (!providedPassword) {
+        // Si no se asignó password manual, enviar flujo de recuperación
+        try {
+          await fetch("/api/auth/forgot-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              correo: userData.email,
+            }),
+          })
+        } catch {
+          console.warn("No se pudo iniciar recuperación de contraseña para el usuario nuevo")
+        }
       }
 
       toast({
         title: "Éxito",
-        description: `Usuario creado correctamente. Se ha enviado un email a ${userData.email} para establecer su contraseña.`,
+        description: providedPassword
+          ? "Usuario creado correctamente con contraseña definida manualmente."
+          : `Usuario creado correctamente. Se envió enlace de recuperación a ${userData.email} (correo o Telegram).`,
       })
 
       await loadUsers()
@@ -200,13 +241,19 @@ export function useUsers() {
     }
   }, [loadUsers, toast])
 
-  const updateUser = useCallback(async (userData: User) => {
+  const updateUser = useCallback(async (userData: UpdateUserInput) => {
     try {
       setLoading(true)
 
       // Obtener roles disponibles primero
       const roleMap = await obtenerRoles()
-      const roleId = roleMap[userData.role] || (userData.role === 'admin' ? 2 : userData.role === 'superadmin' ? 1 : 3)
+      const roleId =
+        roleMap[userData.role] ||
+        roleMap.standard ||
+        roleMap.user ||
+        roleMap.admin ||
+        roleMap.superadmin ||
+        1
 
       // Convertir datos del tipo User a formato de API
       const apiData = {
@@ -215,6 +262,12 @@ export function useUsers() {
         telefono: userData.phone || null,
         estado: mapStatusToAPI(userData.status),
         id_rol: roleId,
+        role: userData.role,
+        branchAccess: userData.branchAccess || [],
+        facilityAccess: userData.facilityAccess || [],
+        ...(typeof userData.password === "string" && userData.password.trim()
+          ? { password: userData.password.trim() }
+          : {}),
       }
 
       await api.put(`/usuarios/${userData.id}`, apiData)
@@ -228,6 +281,37 @@ export function useUsers() {
       return true
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al actualizar usuario"
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [loadUsers, toast])
+
+  const changeUserPassword = useCallback(async (userId: string | number, newPassword: string) => {
+    try {
+      setLoading(true)
+
+      const password = String(newPassword || "").trim()
+      if (!password) {
+        throw new Error("La contraseña es obligatoria")
+      }
+
+      await api.put(`/usuarios/${userId}`, { password })
+
+      toast({
+        title: "Éxito",
+        description: "Contraseña actualizada correctamente",
+      })
+
+      await loadUsers()
+      return true
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Error al cambiar la contraseña"
       toast({
         title: "Error",
         description: errorMessage,
@@ -259,6 +343,7 @@ export function useUsers() {
         description: errorMessage,
         variant: "destructive",
       })
+      console.error("deleteUser failed:", err)
       return false
     } finally {
       setLoading(false)
@@ -269,17 +354,11 @@ export function useUsers() {
     try {
       setLoading(true)
 
-      const baseUrl = typeof window !== "undefined" ? window.location.origin : ""
-      const resetToken = btoa(JSON.stringify({ email: user.email, exp: Date.now() + 86400000 })) // 24h
-      const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
-
-      const response = await fetch("/api/send-reset-email", {
+      const response = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: user.email,
-          resetUrl,
-          userName: user.name,
+          correo: user.email,
         }),
       })
 
@@ -289,7 +368,7 @@ export function useUsers() {
 
       toast({
         title: "Éxito",
-        description: `Se ha enviado un email de restablecimiento a ${user.email}`,
+        description: `Se envió enlace de restablecimiento a ${user.email} (correo o Telegram).`,
       })
       return true
     } catch (err) {
@@ -318,5 +397,6 @@ export function useUsers() {
     updateUser,
     deleteUser,
     sendPasswordReset,
+    changeUserPassword,
   }
 }

@@ -2,6 +2,12 @@ export interface Proceso {
   id_proceso: number
   id_especie: number
   id_instalacion: number
+  nombre_proceso?: string
+  descripcion?: string
+  objetivos?: string
+  estado?: "activo" | "completado" | "pausado" | "extendido"
+  porcentaje_avance?: number
+  fecha_fin_real?: string
   fecha_inicio: string
   fecha_final: string
 }
