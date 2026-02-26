@@ -18,6 +18,7 @@ export function useLecturasPorProceso(id_proceso: number | null, fechaInicio?: s
     try {
       const params = new URLSearchParams({
         id_proceso: id_proceso.toString(),
+        include_lecturas: "0",
         ...(fechaInicio && { fecha_inicio: fechaInicio }),
         ...(fechaFin && { fecha_fin: fechaFin }),
       })
