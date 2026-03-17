@@ -19,17 +19,20 @@ import { Plus, AlertTriangle, Fish, X, Search, RefreshCw, PlayCircle, PauseCircl
 import type { Proceso, ProcesoConCalculos, ProcesoDetallado } from "@/types/proceso"
 import { GenerateProcessesButton } from "@/components/generate-processes-button"
 import { useRolePermissions } from "@/hooks/use-role-permissions"
+import { useAuth } from "@/context/auth-context"
 
 export default function ProcesosPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const appContext = useAppContext()
+  const { user } = useAuth()
   const { processes, loading, error, createProcess, updateProcess, deleteProcess, updateProcessStatus, extendProcess, refresh } =
     useProcesses()
   const instalaciones = appContext?.instalaciones ?? []
   const especies = appContext?.especies ?? []
   const permissions = useRolePermissions()
   const canManageProcesses = permissions.canCreateData || permissions.canEditData
+  const isSimpleOperatorView = user?.role === "standard" || user?.role === "operator"
 
   const [showForm, setShowForm] = useState(false)
   const [editingProcess, setEditingProcess] = useState<ProcesoConCalculos | null>(null)
@@ -238,6 +241,113 @@ export default function ProcesosPage() {
           </div>
         </div>
         <ProcessMonitoringDashboard proceso={toProcesoDetallado(monitoringProcess)} />
+      </div>
+    )
+  }
+
+  if (isSimpleOperatorView) {
+    return (
+      <div className="container max-w-6xl mx-auto px-4 py-6 space-y-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Procesos</h1>
+            <p className="text-muted-foreground">Consulta el estado de cada proceso y entra directo al seguimiento.</p>
+          </div>
+          <Button variant="outline" onClick={() => refresh()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            Actualizar
+          </Button>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <PlayCircle className="h-4 w-4 text-green-600" />
+                Activos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold">{processStats.activos}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <PauseCircle className="h-4 w-4 text-amber-600" />
+                Pausados
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold">{processStats.pausados}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                Completados
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold">{processStats.completados}</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardContent className="p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, especie, instalación o ID"
+                className="pl-9"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {filteredProcesses.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No hay procesos que coincidan con la búsqueda actual.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {filteredProcesses.map((process) => (
+              <Card key={process.id_proceso}>
+                <CardContent className="p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-semibold">
+                        {process.nombre_proceso || `Proceso ${process.id_proceso}`}
+                      </h2>
+                      <span className="text-sm text-muted-foreground">#{process.id_proceso}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {process.nombre_especie || "Sin especie"} · {process.nombre_instalacion || "Sin instalación"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Del {process.fecha_inicio} al {process.fecha_final}
+                    </p>
+                    {process.crecimiento_ostion && (
+                      <p className="text-sm text-cyan-700">
+                        Crecimiento del Ostión: {process.crecimiento_ostion.capturas_requeridas} captura(s),{" "}
+                        {process.crecimiento_ostion.lotes_por_captura} lote(s) por captura
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button onClick={() => handleViewMonitoring(process)}>Abrir seguimiento</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     )
   }

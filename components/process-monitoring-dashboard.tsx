@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ParameterMonitoringCard } from "./parameter-monitoring-card"
+import { ProcessGrowthOstionPanel } from "./process-growth-ostion-panel"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -160,6 +161,9 @@ export function ProcessMonitoringDashboard({ proceso }: ProcessMonitoringDashboa
           )}
         </CardHeader>
       </Card>
+
+      <ProcessGrowthOstionPanel proceso={proceso} />
+
       {/* Estadísticas de parámetros */}
       {parametros.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

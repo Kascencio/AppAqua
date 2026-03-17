@@ -1,3 +1,34 @@
+export interface CrecimientoOstionMedicion {
+  id_crecimiento_ostion_medicion?: number
+  lote_numero: number
+  valor: number
+  unidad: "cm" | "kg"
+  observaciones?: string | null
+}
+
+export interface CrecimientoOstionCaptura {
+  id_crecimiento_ostion_captura?: number
+  numero_captura: number
+  fecha_programada: string | null
+  fecha_real?: string | null
+  estado: "pendiente" | "parcial" | "completada"
+  es_extra?: boolean
+  observaciones?: string | null
+  total_mediciones?: number
+  mediciones?: CrecimientoOstionMedicion[]
+}
+
+export interface CrecimientoOstionConfig {
+  id_crecimiento_ostion_config?: number
+  id_proceso?: number
+  capturas_requeridas: number
+  lotes_por_captura: number
+  calendario_modo?: "automatico" | "manual"
+  total_capturas?: number
+  capturas_completadas?: number
+  capturas?: CrecimientoOstionCaptura[]
+}
+
 export interface Proceso {
   id_proceso: number
   id_especie: number
@@ -10,6 +41,7 @@ export interface Proceso {
   fecha_fin_real?: string
   fecha_inicio: string
   fecha_final: string
+  crecimiento_ostion?: CrecimientoOstionConfig | null
 }
 
 // Tipo híbrido que combina datos básicos con campos calculados

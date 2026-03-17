@@ -1,0 +1,16 @@
+.git
+.gitignore
+.next
+.pnpm-store
+node_modules
+analysis
+docs
+fixes
+scripts
+*.md
+.DS_Store
+.env
+.env.*
+npm-debug.log*
+pnpm-debug.log*
+tsconfig.tsbuildinfo

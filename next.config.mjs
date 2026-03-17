@@ -1,12 +1,25 @@
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
 /** @type {import('next').NextConfig} */
-const EXTERNAL_BACKEND_URL = process.env.NEXT_PUBLIC_EXTERNAL_API_URL || process.env.EXTERNAL_API_URL || 'http://195.35.11.179:3300'
+function normalizeExternalBackendUrl(rawUrl) {
+  const fallback = "http://195.35.11.179:3300"
+  const raw = (rawUrl || fallback).trim().replace(/^['"]|['"]$/g, "")
+  if (!raw) return fallback
+  if (/^\d+$/.test(raw)) return `http://127.0.0.1:${raw}`
+  if (!/^https?:\/\//i.test(raw)) return `http://${raw}`
+  return raw.replace(/\/$/, "")
+}
+
+const EXTERNAL_BACKEND_URL = normalizeExternalBackendUrl(
+  process.env.NEXT_PUBLIC_EXTERNAL_API_URL || process.env.EXTERNAL_API_URL
+)
+const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
+  output: "standalone",
+  turbopack: {
+    root: projectRoot,
   },
   images: {
     unoptimized: true,
@@ -14,11 +27,6 @@ const nextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        {
-          // Proxy para backend externo sin interferir con route handlers locales en /api/*
-          source: '/external-api/:path*',
-          destination: `${EXTERNAL_BACKEND_URL}/api/:path*`,
-        },
         {
           source: '/health',
           destination: `${EXTERNAL_BACKEND_URL}/health`,

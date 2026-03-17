@@ -87,6 +87,13 @@ export interface Proceso {
   nombre_especie?: string
   nombre_instalacion?: string
   estado?: string
+  crecimiento_ostion?: {
+    capturas_requeridas: number
+    lotes_por_captura: number
+    calendario_modo?: "automatico" | "manual"
+    total_capturas?: number
+    capturas_completadas?: number
+  } | null
   lecturas?: unknown[]
 }
 

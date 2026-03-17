@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react"
 import { useWebSocket } from "@/hooks/use-websocket"
+import { useSearchParams } from "next/navigation"
 import { Wifi, WifiOff } from "lucide-react"
 import {
   Search,
@@ -35,6 +36,7 @@ import EditSensorDialog from "@/components/edit-sensor-dialog"
 import DeleteConfirmationDialog from "@/components/delete-confirmation-dialog"
 import { useToast } from "@/hooks/use-toast"
 import type { SensorCompleto } from "@/hooks/use-sensors"
+import { useAuth } from "@/context/auth-context"
 
 // Configuración de rangos por tipo de sensor
 const getSensorConfig = (sensorType: string) => {
@@ -842,18 +844,20 @@ const SimpleSensorCard = ({
 }) => {
   const [realtimeValue, setRealtimeValue] = useState<number | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  
+  const sensorInstaladoId = Number(sensor.id_sensor_instalado || sensor.id)
+  const instalacionId = Number(sensor.id_instalacion || sensor.instalacion_id)
+  const hasValidSensorId = Number.isFinite(sensorInstaladoId) && sensorInstaladoId > 0
+  const hasValidInstalacionId = Number.isFinite(instalacionId) && instalacionId > 0
+
   // WebSocket para actualizaciones en tiempo real
-    const instalacionId = sensor.id_instalacion || sensor.instalacion_id
   const { isConnected } = useWebSocket({
-      instalacionId: instalacionId as string,
-    sensorId: sensor.id_sensor_instalado || sensor.id,
-    enabled: sensor.status === "active" && !!instalacionId,
+    instalacionId,
+    sensorId: sensorInstaladoId,
+    enabled: sensor.status === "active" && hasValidInstalacionId && hasValidSensorId,
     onMessage: (message) => {
-      if (message.sensorId === String(sensor.id_sensor_instalado || sensor.id) && message.value !== undefined) {
-        setRealtimeValue(message.value)
-        setLastUpdate(new Date())
-      }
+      if (!hasValidSensorId || Number(message.sensorId) !== sensorInstaladoId || message.value === undefined) return
+      setRealtimeValue(message.value)
+      setLastUpdate(new Date())
     },
   })
 
@@ -1054,16 +1058,20 @@ const AdvancedSensorCard = ({
 }) => {
   const [realtimeValue, setRealtimeValue] = useState<number | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  
+  const sensorInstaladoId = Number(sensor.id_sensor_instalado || sensor.id)
+  const instalacionId = Number(sensor.id_instalacion || sensor.instalacion_id)
+  const hasValidSensorId = Number.isFinite(sensorInstaladoId) && sensorInstaladoId > 0
+  const hasValidInstalacionId = Number.isFinite(instalacionId) && instalacionId > 0
+
   // WebSocket para actualizaciones en tiempo real
   const { isConnected } = useWebSocket({
-    sensorId: sensor.id_sensor_instalado || sensor.id,
-    enabled: sensor.status === "active",
+    instalacionId,
+    sensorId: sensorInstaladoId,
+    enabled: sensor.status === "active" && hasValidInstalacionId && hasValidSensorId,
     onMessage: (message) => {
-      if (message.sensorId === String(sensor.id_sensor_instalado || sensor.id) && message.value !== undefined) {
-        setRealtimeValue(message.value)
-        setLastUpdate(new Date())
-      }
+      if (!hasValidSensorId || Number(message.sensorId) !== sensorInstaladoId || message.value === undefined) return
+      setRealtimeValue(message.value)
+      setLastUpdate(new Date())
     },
   })
 
@@ -1311,6 +1319,8 @@ const AdvancedSensorCard = ({
 }
 
 export default function SensorsPage() {
+  const searchParams = useSearchParams()
+  const { user } = useAuth()
   const { branches, loading: loadingBranches } = useBranches()
   const { sensors, loading: loadingSensors, createSensor, updateSensor, deleteSensor } = useSensors()
   const [searchQuery, setSearchQuery] = useState("")
@@ -1325,6 +1335,26 @@ export default function SensorsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedSensor, setSelectedSensor] = useState<any | null>(null)
   const { toast } = useToast()
+  const isSimpleOperatorView = user?.role === "standard" || user?.role === "operator"
+  const sensorIdFromQuery = useMemo(() => {
+    const raw = searchParams.get("sensorId")
+    if (!raw) return null
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed) || parsed <= 0) return null
+    return parsed
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!sensorIdFromQuery) return
+
+    setSearchQuery(String(sensorIdFromQuery))
+    setSelectedType("todos")
+    setSelectedStatus("todos")
+    setSelectedBranch("todas")
+    setSelectedFacility("todas")
+    setActiveTab("todos")
+    setViewMode("simple")
+  }, [sensorIdFromQuery])
 
   // Memoize available facilities to prevent recalculation
   const availableFacilities = useMemo(() => {
@@ -1341,6 +1371,31 @@ export default function SensorsPage() {
 
     return { total, active, alert, offline, maintenance }
   }, [sensors])
+
+  const simpleFilteredSensors = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+
+    return sensors.filter((sensor) => {
+      if (query) {
+        const haystack = [
+          sensor.name,
+          sensor.branchName,
+          sensor.facilityName,
+          sensor.currentParameter,
+          sensor.id_sensor_instalado,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+
+        if (!haystack.includes(query)) return false
+      }
+
+      if (selectedStatus !== "todos" && sensor.status !== selectedStatus) return false
+      if (selectedFacility !== "todas" && sensor.facilityName !== selectedFacility) return false
+      return true
+    })
+  }, [searchQuery, selectedFacility, selectedStatus, sensors])
 
   // Organize sensors hierarchically: Company → Branch → Installation → Sensors
   const organizedSensors = useMemo(() => {
@@ -1546,6 +1601,149 @@ export default function SensorsPage() {
           <RefreshCw className="h-8 w-8 animate-spin text-primary" />
           <p>Cargando sensores...</p>
         </div>
+      </div>
+    )
+  }
+
+  if (isSimpleOperatorView) {
+    return (
+      <div className="container max-w-6xl mx-auto px-4 py-6 space-y-6">
+        <PageHeader
+          title="Sensores"
+          description="Vista simple del estado actual de los sensores instalados"
+          icon={Activity}
+        />
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">Activos</p>
+              <p className="text-3xl font-semibold text-green-600">{sensorStats.active}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">Con atención</p>
+              <p className="text-3xl font-semibold text-amber-600">{sensorStats.alert + sensorStats.offline}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">En mantenimiento</p>
+              <p className="text-3xl font-semibold text-orange-600">{sensorStats.maintenance}</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardContent className="p-4 grid gap-4 md:grid-cols-[1fr_220px_220px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Buscar sensor, instalación o sucursal"
+                className="pl-9"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </div>
+
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todos los estados" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos los estados</SelectItem>
+                <SelectItem value="active">Activo</SelectItem>
+                <SelectItem value="alert">Alerta</SelectItem>
+                <SelectItem value="offline">Desconectado</SelectItem>
+                <SelectItem value="maintenance">Mantenimiento</SelectItem>
+                <SelectItem value="inactive">Inactivo</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={selectedFacility} onValueChange={setSelectedFacility}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todas las instalaciones" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas las instalaciones</SelectItem>
+                {availableFacilities.map((facility) => (
+                  <SelectItem key={facility} value={facility}>
+                    {facility}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+
+        {(sensorStats.alert > 0 || sensorStats.offline > 0) && (
+          <Alert className="border-yellow-200 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              Hay sensores que necesitan revisión. Prioriza los que aparecen con estado de alerta o desconectados.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {simpleFilteredSensors.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No se encontraron sensores con los filtros actuales.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {simpleFilteredSensors.map((sensor) => {
+              const statusLabel =
+                sensor.status === "active"
+                  ? "Activo"
+                  : sensor.status === "alert"
+                    ? "Alerta"
+                    : sensor.status === "offline"
+                      ? "Desconectado"
+                      : sensor.status === "maintenance"
+                        ? "Mantenimiento"
+                        : "Inactivo"
+
+              const statusClass =
+                sensor.status === "active"
+                  ? "bg-green-100 text-green-700"
+                  : sensor.status === "alert" || sensor.status === "offline"
+                    ? "bg-red-100 text-red-700"
+                    : "bg-amber-100 text-amber-700"
+
+              return (
+                <Card key={sensor.id_sensor_instalado}>
+                  <CardContent className="p-5 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="font-semibold text-lg">{sensor.name || `Sensor ${sensor.id_sensor_instalado}`}</h2>
+                        <p className="text-sm text-muted-foreground">ID #{sensor.id_sensor_instalado}</p>
+                      </div>
+                      <Badge className={statusClass}>{statusLabel}</Badge>
+                    </div>
+
+                    <div className="grid gap-2 text-sm text-muted-foreground">
+                      <p>Instalación: {sensor.facilityName || "Sin instalación"}</p>
+                      <p>Sucursal: {sensor.branchName || "Sin sucursal"}</p>
+                      <p>Parámetro: {sensor.currentParameter || sensor.type || "Sin parámetro"}</p>
+                    </div>
+
+                    <div className="rounded-lg border bg-muted/40 p-3">
+                      <p className="text-sm text-muted-foreground">Última lectura</p>
+                      <p className="text-2xl font-semibold">
+                        {typeof sensor.lastReading === "number" ? sensor.lastReading.toFixed(2) : "--"}
+                        <span className="text-sm font-normal text-muted-foreground ml-1">{sensor.unit || ""}</span>
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
       </div>
     )
   }

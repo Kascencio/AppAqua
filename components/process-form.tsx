@@ -39,6 +39,8 @@ export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProp
     fecha_inicio: initialData?.fecha_inicio || "",
     fecha_final: initialData?.fecha_final || "",
     objetivos: initialData?.objetivos || "",
+    crecimiento_capturas_requeridas: initialData?.crecimiento_ostion?.capturas_requeridas || 1,
+    crecimiento_lotes_por_captura: initialData?.crecimiento_ostion?.lotes_por_captura || 1,
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -76,6 +78,14 @@ export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProp
       }
     }
 
+    if (formData.crecimiento_capturas_requeridas < 1 || formData.crecimiento_capturas_requeridas > 100) {
+      newErrors.crecimiento_capturas_requeridas = "Debe estar entre 1 y 100"
+    }
+
+    if (formData.crecimiento_lotes_por_captura < 1 || formData.crecimiento_lotes_por_captura > 100) {
+      newErrors.crecimiento_lotes_por_captura = "Debe estar entre 1 y 100"
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -87,7 +97,16 @@ export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProp
 
     setIsSubmitting(true)
     try {
-      const success = await onSubmit(formData as Omit<Proceso, "id_proceso">)
+      const payload = {
+        ...formData,
+        crecimiento_ostion: {
+          capturas_requeridas: formData.crecimiento_capturas_requeridas,
+          lotes_por_captura: formData.crecimiento_lotes_por_captura,
+          calendario_modo: "automatico" as const,
+        },
+      }
+
+      const success = await onSubmit(payload as Omit<Proceso, "id_proceso">)
       if (success) {
         // Form will be closed by parent component
       }
@@ -251,6 +270,59 @@ export function ProcessForm({ onSubmit, onCancel, initialData }: ProcessFormProp
               rows={2}
             />
           </div>
+
+          <Card className="border-cyan-200 bg-cyan-50/40">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Crecimiento del Ostión</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="crecimiento_capturas_requeridas">Capturas requeridas *</Label>
+                <Input
+                  id="crecimiento_capturas_requeridas"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={formData.crecimiento_capturas_requeridas}
+                  onChange={(e) =>
+                    handleInputChange("crecimiento_capturas_requeridas", Number.parseInt(e.target.value || "1", 10))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Define cuántas capturas de crecimiento se programarán para este proceso.
+                </p>
+                {errors.crecimiento_capturas_requeridas && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>{errors.crecimiento_capturas_requeridas}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="crecimiento_lotes_por_captura">Lotes o medidas por captura *</Label>
+                <Input
+                  id="crecimiento_lotes_por_captura"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={formData.crecimiento_lotes_por_captura}
+                  onChange={(e) =>
+                    handleInputChange("crecimiento_lotes_por_captura", Number.parseInt(e.target.value || "1", 10))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Cada captura permitirá registrar esta cantidad de lotes con mediciones en cm o kg.
+                </p>
+                {errors.crecimiento_lotes_por_captura && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>{errors.crecimiento_lotes_por_captura}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Botones */}
           <div className="flex justify-end gap-2">

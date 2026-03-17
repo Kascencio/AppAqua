@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useEffect, useState } from "react"
+import { useMemo, useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -19,6 +19,7 @@ import {
   RefreshCw,
   TrendingUp,
   AlertTriangle,
+  Bell,
   Thermometer,
   Droplets,
   Activity,
@@ -38,6 +39,29 @@ export default function DashboardPage() {
   const { user, isAuthenticated, isLoading } = useAuth()
   const app = useAppContext()
   const { sensors } = useSensors()
+  const isSimpleOperatorView = user?.role === "standard" || user?.role === "operator"
+
+  const isSensorOperational = (sensor: any) => {
+    const status = String(sensor?.status ?? sensor?.estado_operativo ?? sensor?.estado ?? "").toLowerCase()
+    return status === "active" || status === "activo"
+  }
+
+  const isAlertRead = (alert: any) => {
+    if (typeof alert?.read === "boolean") return Boolean(alert.read)
+    if (typeof alert?.leida === "boolean") return Boolean(alert.leida)
+    return false
+  }
+
+  const formatDateLabel = (value?: string) => {
+    if (!value) return "Sin fecha"
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return "Sin fecha"
+    return parsed.toLocaleDateString("es-MX", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  }
 
   // Estado para promedios últimas 24h
   const [promedios24h, setPromedios24h] = useState({
@@ -46,6 +70,7 @@ export default function DashboardPage() {
     oxigeno: 0,
     loading: true,
   })
+  const lastPromediosRequestKeyRef = useRef<string>("")
 
   const detectMetricType = (sensor: any): "temperature" | "ph" | "oxygen" | "other" => {
     const raw = String(
@@ -67,24 +92,48 @@ export default function DashboardPage() {
     return "other"
   }
 
-  // Calcular promedios de últimas 24h
+  const activeFacilitySignature = useMemo(() => {
+    if (!Array.isArray(app?.instalaciones) || app.instalaciones.length === 0) return ""
+    return app.instalaciones
+      .filter((instalacion: any) => instalacion.estado_operativo === "activo")
+      .map((instalacion: any) => Number(instalacion.id_instalacion))
+      .filter((id: number) => Number.isFinite(id) && id > 0)
+      .sort((a: number, b: number) => a - b)
+      .join(",")
+  }, [app?.instalaciones])
+
+  // Calcular promedios de últimas 24h (con deduplicación por minuto para evitar tormenta de requests)
   useEffect(() => {
+    const MAX_SENSORS_PER_METRIC = 3
+
     async function fetchPromedios() {
       if (!isAuthenticated || !user) {
+        lastPromediosRequestKeyRef.current = ""
         setPromedios24h({ temperatura: 0, ph: 0, oxigeno: 0, loading: false })
         return
       }
 
+      if (isSimpleOperatorView) {
+        lastPromediosRequestKeyRef.current = ""
+        setPromedios24h({ temperatura: 0, ph: 0, oxigeno: 0, loading: false })
+        return
+      }
+
+      const nowBucketMs = Math.floor(Date.now() / 60000) * 60000
+      const requestKey = `${user.id || user.email || user.role}:${activeFacilitySignature}:${nowBucketMs}`
+      if (lastPromediosRequestKeyRef.current === requestKey) return
+      lastPromediosRequestKeyRef.current = requestKey
+
       setPromedios24h((prev) => ({ ...prev, loading: true }))
 
-      const ahora = new Date()
-      const hace24h = new Date(ahora.getTime() - 24 * 60 * 60 * 1000)
+      const ahora = new Date(nowBucketMs)
+      const hace24h = new Date(nowBucketMs - 24 * 60 * 60 * 1000)
       const desde = hace24h.toISOString()
       const hasta = ahora.toISOString()
 
       let sensoresFuente: any[] = []
       try {
-        const sensoresResp = await backendApi.getSensoresInstalados({ page: 1, limit: 5000 })
+        const sensoresResp = await backendApi.getSensoresInstalados({ page: 1, limit: 1000 })
         const payload: any = sensoresResp
         const sensoresDb: any[] = Array.isArray(payload) ? payload : payload?.data || []
 
@@ -122,7 +171,7 @@ export default function DashboardPage() {
         let sum = 0
         let count = 0
         await Promise.all(
-          sensorList.slice(0, 5).map(async (s: any) => {
+          sensorList.slice(0, MAX_SENSORS_PER_METRIC).map(async (s: any) => {
             try {
               const sensorId = Number(s.id_sensor_instalado)
               if (!Number.isFinite(sensorId) || sensorId <= 0) return
@@ -157,7 +206,7 @@ export default function DashboardPage() {
     }
 
     fetchPromedios()
-  }, [app?.instalaciones, isAuthenticated, sensors, user])
+  }, [activeFacilitySignature, app?.instalaciones, isAuthenticated, isSimpleOperatorView, sensors, user])
 
   if (isLoading) {
     return (
@@ -188,7 +237,7 @@ export default function DashboardPage() {
   const alerts = app?.alerts ?? []
   const stats = app?.stats
 
-  const sensoresActivos = sensors.filter((s: any) => s.status === "active").length
+  const sensoresActivos = sensors.filter(isSensorOperational).length
   const sensoresTotal = sensors.length
 
   const instalacionesActivas = stats?.instalaciones_activas ?? instalaciones.filter((i: any) => i.estado_operativo === "activo").length
@@ -198,6 +247,22 @@ export default function DashboardPage() {
     const fin = new Date(p.fecha_final)
     return now >= inicio && now <= fin
   })
+  const notificacionesNoLeidas = alerts.filter((alert: any) => !isAlertRead(alert)).length
+  const sensoresConAtencion = sensors.filter((sensor: any) => !isSensorOperational(sensor)).slice(0, 6)
+  const ultimasNotificaciones = [...alerts]
+    .sort((a: any, b: any) => {
+      const aTime = new Date(a?.fecha_alerta ?? a?.fecha ?? a?.fecha_hora_alerta ?? 0).getTime()
+      const bTime = new Date(b?.fecha_alerta ?? b?.fecha ?? b?.fecha_hora_alerta ?? 0).getTime()
+      return bTime - aTime
+    })
+    .slice(0, 6)
+  const procesosActivosResumen = [...procesosActivos]
+    .sort((a: any, b: any) => {
+      const aTime = new Date(a?.fecha_final ?? 0).getTime()
+      const bTime = new Date(b?.fecha_final ?? 0).getTime()
+      return aTime - bTime
+    })
+    .slice(0, 6)
 
   const loadingApp = app?.isLoading ?? false
   const error = app?.error
@@ -242,6 +307,199 @@ export default function DashboardPage() {
         }
       })
   }, [instalaciones, nombreEmpresaById, procesoByInstalacion])
+
+  if (isSimpleOperatorView) {
+    return (
+      <div className="flex-1 space-y-6 p-4 md:p-8 pt-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+              <Waves className="h-8 w-8 text-cyan-600" />
+              Inicio del Operador
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Hola, {user.name || user.email}. Aqui tienes sensores, notificaciones y procesos en una vista simple.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => refreshData?.()} disabled={loadingApp}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loadingApp ? "animate-spin" : ""}`} />
+            Actualizar datos
+          </Button>
+        </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Radio className="h-4 w-4 text-cyan-600" />
+                Sensores
+              </CardTitle>
+              <CardDescription>Estado general de los sensores</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-3xl font-semibold">
+                {sensoresActivos}
+                <span className="text-base font-normal text-muted-foreground"> / {sensoresTotal}</span>
+              </p>
+              <Badge variant={sensoresConAtencion.length > 0 ? "destructive" : "secondary"}>
+                {sensoresConAtencion.length > 0
+                  ? `${sensoresConAtencion.length} sensor(es) por revisar`
+                  : "Sin sensores con alerta"}
+              </Badge>
+              <Button className="w-full" variant="outline" onClick={() => router.push("/sensors")}>
+                Ver sensores
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Bell className="h-4 w-4 text-orange-600" />
+                Notificaciones
+              </CardTitle>
+              <CardDescription>Alertas más recientes</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-3xl font-semibold">{notificacionesNoLeidas}</p>
+              <p className="text-sm text-muted-foreground">
+                sin leer de {alerts.length} total
+              </p>
+              <Button className="w-full" variant="outline" onClick={() => router.push("/notifications")}>
+                Ver notificaciones
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Activity className="h-4 w-4 text-green-600" />
+                Procesos
+              </CardTitle>
+              <CardDescription>Seguimiento de procesos activos</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-3xl font-semibold">
+                {procesosActivos.length}
+                <span className="text-base font-normal text-muted-foreground"> / {procesos.length}</span>
+              </p>
+              <Badge variant="secondary">{procesosActivos.length > 0 ? "Hay procesos en curso" : "Sin procesos activos"}</Badge>
+              <Button className="w-full" variant="outline" onClick={() => router.push("/procesos")}>
+                Ver procesos
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Sensores que requieren revision</CardTitle>
+              <CardDescription>Solo se muestran los casos que necesitan atencion</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sensoresConAtencion.length === 0 ? (
+                <div className="text-sm text-muted-foreground">Todo en orden. No hay sensores pendientes de revision.</div>
+              ) : (
+                <div className="space-y-2">
+                  {sensoresConAtencion.map((sensor: any, index: number) => {
+                    const statusRaw = String(sensor?.status ?? sensor?.estado_operativo ?? sensor?.estado ?? "").toLowerCase()
+                    const sensorName = String(
+                      sensor?.name ??
+                        sensor?.nombre ??
+                        sensor?.sensor ??
+                        sensor?.catalogo_sensores?.nombre ??
+                        `Sensor ${sensor?.id_sensor_instalado ?? index + 1}`,
+                    )
+                    const estadoLabel = statusRaw === "inactive" || statusRaw === "inactivo" ? "Inactivo" : "Revisar"
+                    return (
+                      <div
+                        key={`${sensor?.id_sensor_instalado ?? sensor?.id ?? "sensor"}-${index}`}
+                        className="flex items-center justify-between rounded-lg border p-3"
+                      >
+                        <p className="font-medium">{sensorName}</p>
+                        <Badge variant="destructive">{estadoLabel}</Badge>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Ultimas notificaciones</CardTitle>
+              <CardDescription>Mensajes recientes del sistema</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ultimasNotificaciones.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No hay notificaciones recientes.</div>
+              ) : (
+                <div className="space-y-2">
+                  {ultimasNotificaciones.map((alerta: any, index: number) => {
+                    const descripcion = String(alerta?.descripcion ?? alerta?.mensaje_alerta ?? alerta?.title ?? "Notificacion")
+                    const fecha = String(alerta?.fecha_alerta ?? alerta?.fecha ?? alerta?.fecha_hora_alerta ?? "")
+                    const leida = isAlertRead(alerta)
+
+                    return (
+                      <div
+                        key={`${alerta?.id_alertas ?? alerta?.id_alerta ?? "alerta"}-${index}`}
+                        className="rounded-lg border p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium truncate">{descripcion}</p>
+                          <Badge variant={leida ? "outline" : "destructive"}>{leida ? "Leida" : "Nueva"}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{formatDateLabel(fecha)}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Procesos en curso</CardTitle>
+            <CardDescription>Los proximos procesos por fecha de cierre</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {procesosActivosResumen.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No hay procesos activos por el momento.</div>
+            ) : (
+              <div className="space-y-2">
+                {procesosActivosResumen.map((proceso: any, index: number) => (
+                  <div
+                    key={`${proceso?.id_proceso ?? "proceso"}-${index}`}
+                    className="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">{proceso?.nombre_proceso || `Proceso #${proceso?.id_proceso ?? index + 1}`}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {proceso?.nombre_especie || `Especie #${proceso?.id_especie ?? "N/A"}`}
+                      </p>
+                    </div>
+                    <Badge variant="secondary">Fin: {formatDateLabel(proceso?.fecha_final)}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   // Accesos rápidos
   const quickActions = [

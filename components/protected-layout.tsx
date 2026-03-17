@@ -2,8 +2,9 @@
 
 import type React from "react"
 
+import { useEffect } from "react"
 import { useAuth } from "@/context/auth-context"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import Sidebar from "@/components/sidebar"
 import { ModeToggle } from "@/components/mode-toggle"
 
@@ -12,8 +13,21 @@ interface ProtectedLayoutProps {
 }
 
 export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, user } = useAuth()
   const pathname = usePathname()
+  const router = useRouter()
+  const isSimpleOperatorView = user?.role === "standard" || user?.role === "operator"
+  const isOperatorAllowedPath =
+    pathname === "/" ||
+    pathname.startsWith("/sensors") ||
+    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/procesos")
+
+  useEffect(() => {
+    if (!isAuthenticated || !isSimpleOperatorView) return
+    if (isOperatorAllowedPath) return
+    router.replace("/")
+  }, [isAuthenticated, isOperatorAllowedPath, isSimpleOperatorView, router])
 
   // Mostrar loading mientras se verifica la autenticación
   if (isLoading) {
@@ -30,6 +44,17 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   // Mostrar children si no está autenticado (permitir login y otras páginas públicas)
   if (!isAuthenticated) {
     return <>{children}</>
+  }
+
+  if (isSimpleOperatorView && !isOperatorAllowedPath) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-blue-50 to-indigo-100 dark:from-blue-950 dark:via-cyan-950 dark:to-indigo-950">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
+          <p className="text-blue-600 dark:text-blue-300">Redirigiendo a la vista operativa...</p>
+        </div>
+      </div>
+    )
   }
 
   // Si está autenticado, mostrar el layout completo con sidebar

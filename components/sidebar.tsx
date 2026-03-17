@@ -44,6 +44,9 @@ function Sidebar({ className }: SidebarProps) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     settings: false,
   })
+  const operatorFocusedRoles = ["standard", "operator"]
+  const operatorCoreRouteSet = new Set(["/", "/sensors", "/notifications", "/procesos"])
+  const monitoringRoles = ["superadmin", "admin", "standard", "operator", "manager", "viewer"]
 
   // Define all possible routes with their required permissions
   const allRoutes = [
@@ -51,7 +54,7 @@ function Sidebar({ className }: SidebarProps) {
       href: "/",
       icon: Home,
       title: "Inicio",
-      roles: ["superadmin", "admin", "standard"], // Todos ven el dashboard
+      roles: monitoringRoles, // Todos los roles operativos ven el dashboard
     },
     {
       href: "/sucursales",
@@ -63,43 +66,43 @@ function Sidebar({ className }: SidebarProps) {
       href: "/instalaciones",
       icon: Factory,
       title: "Instalaciones",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/sensors",
       icon: Gauge,
       title: "Sensores",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/especies",
       icon: Fish,
       title: "Especies",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/procesos",
       icon: Activity,
       title: "Procesos",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/analytics",
       icon: BarChart3,
       title: "Analítica",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/notifications",
       icon: Bell,
       title: "Notificaciones",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/map",
       icon: MapIcon,
       title: "Mapa",
-      roles: ["superadmin", "admin", "standard"],
+      roles: monitoringRoles,
     },
     {
       href: "/users",
@@ -118,7 +121,14 @@ function Sidebar({ className }: SidebarProps) {
   // Filter routes based on user role
   const routes = allRoutes.filter((route) => {
     if (!user) return false
-    return route.roles.includes(user.role)
+    if (!route.roles.includes(user.role)) return false
+
+    const hasOperatorFocusedNav = operatorFocusedRoles.includes(user.role)
+    if (hasOperatorFocusedNav) {
+      return operatorCoreRouteSet.has(route.href)
+    }
+
+    return true
   })
 
   // Settings routes with role-based access
@@ -142,6 +152,7 @@ function Sidebar({ className }: SidebarProps) {
 
   const availableSettingsRoutes = settingsRoutes.filter((route) => {
     if (!user) return false
+    if (operatorFocusedRoles.includes(user.role)) return false
     return route.roles.includes(user.role)
   })
 
@@ -165,7 +176,12 @@ function Sidebar({ className }: SidebarProps) {
       case "admin":
         return "Administrador"
       case "standard":
-        return "Estandar"
+      case "operator":
+        return "Operador"
+      case "manager":
+        return "Gerente"
+      case "viewer":
+        return "Lector"
       default:
         return role
     }
@@ -174,6 +190,7 @@ function Sidebar({ className }: SidebarProps) {
   // Get user access summary
   const getUserAccessSummary = () => {
     if (!user) return ""
+    const branchCount = user.branchAccess?.length || 0
 
     switch (user.role) {
       case "superadmin":
@@ -181,7 +198,13 @@ function Sidebar({ className }: SidebarProps) {
       case "admin":
         return "Acceso a empresas/instalaciones asignadas"
       case "standard":
-        const branchCount = user.branchAccess?.length || 0
+      case "operator":
+        if (branchCount > 0) {
+          return `${branchCount} empresa${branchCount > 1 ? "s" : ""} asignada${branchCount > 1 ? "s" : ""}`
+        }
+        return "Vista simple para operación diaria"
+      case "manager":
+      case "viewer":
         return branchCount > 0
           ? `${branchCount} empresa${branchCount > 1 ? "s" : ""} asignada${branchCount > 1 ? "s" : ""}`
           : "Sin empresas asignadas"

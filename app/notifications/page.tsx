@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { Bell, Droplets, Filter, Thermometer, Activity } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 import { useAppContext } from "@/context/app-context"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { PageHeader } from "@/components/page-header"
 import { api } from "@/lib/api"
 import { useAuth } from "@/context/auth-context"
@@ -19,6 +19,7 @@ export default function NotificationsPage() {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
   const [processingIds, setProcessingIds] = useState<number[]>([])
   const { toast } = useToast()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { user } = useAuth()
 
@@ -90,9 +91,12 @@ export default function NotificationsPage() {
     setProcessingIds((prev) => prev.filter((item) => item !== id))
   }
 
-  const refreshAlerts = async () => {
-    await refreshData?.({ silent: true, force: true })
-  }
+  const refreshAlerts = useCallback(
+    (force = false) => {
+      void refreshData?.({ silent: true, force })
+    },
+    [refreshData],
+  )
 
   const markAsRead = async (id: number) => {
     if (processingIds.includes(id)) return
@@ -100,7 +104,7 @@ export default function NotificationsPage() {
     markIdAsProcessing(id)
     try {
       await api.put(`/alertas/${id}/read`, { read: true })
-      await refreshAlerts()
+      refreshAlerts()
 
       toast({
         title: "Notificación marcada como leída",
@@ -129,7 +133,7 @@ export default function NotificationsPage() {
     setIsBulkProcessing(true)
     try {
       await api.put("/alertas/read-all", { read: true, ids })
-      await refreshAlerts()
+      refreshAlerts()
 
       toast({
         title: "Notificaciones actualizadas",
@@ -162,7 +166,7 @@ export default function NotificationsPage() {
     markIdAsProcessing(id)
     try {
       await api.delete(`/alertas/${id}`)
-      await refreshAlerts()
+      refreshAlerts()
 
       toast({
         title: "Notificación eliminada",
@@ -199,7 +203,7 @@ export default function NotificationsPage() {
     setIsBulkProcessing(true)
     try {
       await api.post("/alertas/delete-all", { ids })
-      await refreshAlerts()
+      refreshAlerts()
 
       toast({
         title: "Notificaciones eliminadas",
@@ -259,6 +263,50 @@ export default function NotificationsPage() {
 
     return Math.floor(seconds) + " segundos"
   }
+
+  const resolveAlertSensorId = useCallback((alert: any): number | null => {
+    const sensorId = Number(
+      alert?.id_sensor_instalado ??
+        alert?.sensor_instalado?.id_sensor_instalado ??
+        alert?.sensor?.id_sensor_instalado ??
+        alert?.sensor?.id,
+    )
+    if (!Number.isFinite(sensorId) || sensorId <= 0) return null
+    return sensorId
+  }, [])
+
+  const openSensorFromNotification = useCallback(
+    async (alert: any) => {
+      const sensorId = resolveAlertSensorId(alert)
+      if (!sensorId) {
+        toast({
+          title: "Sensor no disponible",
+          description: "Esta notificación no tiene un sensor asociado para navegar.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const params = new URLSearchParams({ sensorId: String(sensorId) })
+      const alertId = Number(alert?.id_alertas ?? alert?.id_alerta)
+      if (Number.isFinite(alertId) && alertId > 0) {
+        params.set("alertId", String(alertId))
+      }
+
+      const isRead = Boolean(alert?.read ?? alert?.leida)
+      if (!isRead && Number.isFinite(alertId) && alertId > 0) {
+        try {
+          await api.put(`/alertas/${alertId}/read`, { read: true })
+          refreshAlerts()
+        } catch {
+          // Si falla el marcado, no bloqueamos la navegación al sensor.
+        }
+      }
+
+      router.push(`/sensors?${params.toString()}`)
+    },
+    [refreshAlerts, resolveAlertSensorId, router, toast],
+  )
 
   if (isLoading) {
     return (
@@ -341,12 +389,24 @@ export default function NotificationsPage() {
                 filteredAlerts.map((alert) => (
                   <div
                     key={alert.id_alertas}
-                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted"
+                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openSensorFromNotification(alert)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        openSensorFromNotification(alert)
+                      }
+                    }}
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
                       <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
+                      <p className="text-xs text-primary">
+                        Sensor #{resolveAlertSensorId(alert) ?? "N/D"} · Click para abrir
+                      </p>
                       <p className="text-xs text-muted-foreground">Recibida hace {formatTimeAgo(alert.fecha)}</p>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -354,7 +414,10 @@ export default function NotificationsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => void markAsRead(alert.id_alertas)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void markAsRead(alert.id_alertas)
+                          }}
                           disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
                         >
                           Marcar como leída
@@ -364,7 +427,10 @@ export default function NotificationsPage() {
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => void deleteNotification(alert.id_alertas)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void deleteNotification(alert.id_alertas)
+                          }}
                           disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
                         >
                           Eliminar
@@ -394,19 +460,34 @@ export default function NotificationsPage() {
                 filteredAlerts.map((alert) => (
                   <div
                     key={alert.id_alertas}
-                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted"
+                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openSensorFromNotification(alert)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        openSensorFromNotification(alert)
+                      }
+                    }}
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
                       <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
+                      <p className="text-xs text-primary">
+                        Sensor #{resolveAlertSensorId(alert) ?? "N/D"} · Click para abrir
+                      </p>
                       <p className="text-xs text-muted-foreground">Recibida hace {formatTimeAgo(alert.fecha)}</p>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => void markAsRead(alert.id_alertas)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void markAsRead(alert.id_alertas)
+                        }}
                         disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
                       >
                         Marcar como leída
@@ -415,7 +496,10 @@ export default function NotificationsPage() {
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => void deleteNotification(alert.id_alertas)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void deleteNotification(alert.id_alertas)
+                          }}
                           disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
                         >
                           Eliminar
@@ -445,12 +529,24 @@ export default function NotificationsPage() {
                 filteredAlerts.map((alert) => (
                   <div
                     key={alert.id_alertas}
-                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted"
+                    className="flex items-start gap-3 pb-4 border-b last:border-0 p-3 rounded-lg transition duration-300 ease-in-out hover:bg-muted cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openSensorFromNotification(alert)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        openSensorFromNotification(alert)
+                      }
+                    }}
                   >
                     {getParameterIcon(alert.parameter)}
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-medium leading-none">{alert.title || "Alerta de Sistema"}</p>
                       <p className="text-sm text-muted-foreground">{alert.descripcion}</p>
+                      <p className="text-xs text-primary">
+                        Sensor #{resolveAlertSensorId(alert) ?? "N/D"} · Click para abrir
+                      </p>
                       <p className="text-xs text-muted-foreground">Recibida hace {formatTimeAgo(alert.fecha)}</p>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -458,7 +554,10 @@ export default function NotificationsPage() {
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => void deleteNotification(alert.id_alertas)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void deleteNotification(alert.id_alertas)
+                          }}
                           disabled={processingIds.includes(Number(alert.id_alertas)) || isBulkProcessing}
                         >
                           Eliminar

@@ -63,7 +63,7 @@ NEXT_PUBLIC_EXTERNAL_API_URL=https://BACKEND_HOST:3300
 EXTERNAL_API_URL=https://BACKEND_HOST:3300
 NEXT_PUBLIC_WS_URL=wss://BACKEND_HOST:3300/ws/lecturas
 
-NEXT_PUBLIC_API_URL=/external-api
+NEXT_PUBLIC_API_URL=/api
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
@@ -168,7 +168,7 @@ pnpm start
   - o migrar a fuente local.
 
 ### Pantallas lentas
-- validar latencia de `/external-api/*`.
+- validar latencia de `/api/*`.
 - revisar logs de llamadas repetidas.
 - confirmar que no haya loops de refresh por efecto.
 

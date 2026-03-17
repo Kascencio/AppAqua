@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { DateRange } from "react-day-picker"
-import { backendApi, type Promedio } from "@/lib/backend-client"
+import type { Promedio } from "@/lib/backend-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   LineChart,
   Line,
@@ -28,12 +27,6 @@ type TrendPoint = {
 type OptionWithCount = {
   value: string
   count: number
-}
-
-function computeBucketMinutes(from: Date, to: Date, targetPoints = 240): number {
-  const totalMinutes = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 60000))
-  const bucket = Math.ceil(totalMinutes / targetPoints)
-  return Math.max(5, bucket)
 }
 
 function normalizeTs(iso: string): string {
@@ -136,30 +129,22 @@ function pickMeta(param: ParamKey, sensors: any[]) {
     color: colorMap[canonical] || colorMap.other,
   }
 }
-
-// Ejecutar con concurrencia limitada para no saturar
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length) as any
-  let idx = 0
-
-  const workers = new Array(Math.max(1, limit)).fill(0).map(async () => {
-    while (idx < items.length) {
-      const current = idx++
-      results[current] = await fn(items[current])
-    }
-  })
-
-  await Promise.all(workers)
-  return results
-}
-
-export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRange; sensors?: any[] }) {
+export function ParameterTrendChart({
+  dateRange,
+  sensors,
+  seriesBySensor,
+  loading = false,
+  isRefreshing = false,
+  coverage,
+}: {
+  dateRange: DateRange
+  sensors?: any[]
+  seriesBySensor?: Map<number, Promedio[]>
+  loading?: boolean
+  isRefreshing?: boolean
+  coverage?: { queried: number; total: number }
+}) {
   const [parameter, setParameter] = useState<ParamKey>("temperature")
-  const [data, setData] = useState<TrendPoint[]>([])
-  const [loading, setLoading] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const hasData = useRef(false)
 
   const from = dateRange?.from
   const to = dateRange?.to
@@ -202,89 +187,39 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
     return (sourceSensors || []).filter((s: any) => normalizeKey(getTipoMedidaFromSensor(s)) === key).length
   }, [sourceSensors, parameter])
 
-  useEffect(() => {
-    if (!from || !to) return
-    if (!sensorsToQuery.length) {
-      setData([])
-      hasData.current = false
-      return
-    }
+  const data = useMemo<TrendPoint[]>(() => {
+    if (!from || !to || !seriesBySensor || sensorsToQuery.length === 0) return []
 
-    if (!hasData.current) setLoading(true)
-    else setIsRefreshing(true)
+    const agg = new Map<string, { sumWV: number; sumW: number }>()
+    for (const sensor of sensorsToQuery) {
+      const sensorId = Number(sensor.id_sensor_instalado)
+      const rows = seriesBySensor.get(sensorId) ?? []
+      for (const point of rows) {
+        const t = new Date(point.timestamp).getTime()
+        if (!Number.isFinite(t) || t < from.getTime() || t > to.getTime()) continue
 
-    setError(null)
-    let cancelled = false
+        const ts = normalizeTs(point.timestamp)
+        const weightRaw = Number(point.muestras ?? 1)
+        const weight = Number.isFinite(weightRaw) && weightRaw > 0 ? weightRaw : 1
+        const value = Number(point.promedio ?? 0)
+        if (!Number.isFinite(value)) continue
 
-    ;(async () => {
-      try {
-        const bucketMinutes = computeBucketMinutes(from, to, 100)
-        const desde = from.toISOString()
-        const hasta = to.toISOString()
-
-        // Usar concurrencia limitada para no saturar el servidor
-        const results = await mapWithConcurrency(
-          sensorsToQuery,
-          3, // máximo 3 requests simultáneos para mejor velocidad
-          async (s: any) => {
-            const id = Number(s.id_sensor_instalado)
-            if (!id) return [] as Promedio[]
-
-            const resp = await backendApi
-              .getPromedios({ sensorInstaladoId: id, bucketMinutes, desde, hasta })
-              .catch(() => [] as Promedio[])
-
-            return ((resp as any[]) as Promedio[]).filter((p) => {
-              const t = new Date(p.timestamp).getTime()
-              return Number.isFinite(t) && t >= from.getTime() && t <= to.getTime()
-            })
-          },
-        )
-
-        // Aggregate by timestamp with weights (muestras)
-        const agg = new Map<string, { sumWV: number; sumW: number }>()
-        for (const arr of results) {
-          for (const p of arr) {
-            const ts = normalizeTs(p.timestamp)
-            const w = Number((p as any).muestras ?? 1)
-            const v = Number((p as any).promedio ?? 0)
-            if (!Number.isFinite(v)) continue
-            const weight = Number.isFinite(w) && w > 0 ? w : 1
-            const prev = agg.get(ts) || { sumWV: 0, sumW: 0 }
-            prev.sumWV += v * weight
-            prev.sumW += weight
-            agg.set(ts, prev)
-          }
-        }
-
-        const merged: TrendPoint[] = Array.from(agg.entries())
-          .map(([ts, x]) => ({ ts, value: x.sumW > 0 ? x.sumWV / x.sumW : 0, muestras: x.sumW }))
-          .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
-
-        if (!cancelled) {
-          setData(merged)
-          hasData.current = merged.length > 0
-        }
-      } catch (e: any) {
-        console.error("[ParameterTrendChart] error", e)
-        if (!cancelled) {
-          setError(e?.message || "Error al obtener tendencia")
-          if (!hasData.current) setData([])
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-          setIsRefreshing(false)
-        }
+        const current = agg.get(ts) ?? { sumWV: 0, sumW: 0 }
+        current.sumWV += value * weight
+        current.sumW += weight
+        agg.set(ts, current)
       }
-    })()
-
-    return () => {
-      cancelled = true
     }
-  }, [from, to, sensorsToQuery])
 
-  const anyError = error
+    return Array.from(agg.entries())
+      .map(([ts, value]) => ({
+        ts,
+        value: value.sumW > 0 ? value.sumWV / value.sumW : 0,
+        muestras: value.sumW,
+      }))
+      .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+  }, [from, to, sensorsToQuery, seriesBySensor])
+
   const meta = pickMeta(parameter, sourceSensors)
   const chartConfig = {
     value: {
@@ -294,14 +229,6 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
   } satisfies ChartConfig
 
   if (!from || !to) return null
-
-  if (anyError && data.length === 0) {
-    return (
-      <Alert variant="destructive">
-        <AlertDescription>{String(anyError)}</AlertDescription>
-      </Alert>
-    )
-  }
 
   return (
     <Card>
@@ -339,7 +266,11 @@ export function ParameterTrendChart({ dateRange, sensors }: { dateRange: DateRan
         </div>
       </CardHeader>
       <CardContent>
-        {anyError && data.length > 0 && <div className="mb-2 text-xs text-destructive">{String(anyError)}</div>}
+        {coverage && sensorsAvailableForParameter > sensorsToQuery.length && (
+          <div className="mb-3 text-xs text-muted-foreground">
+            Tendencia rápida basada en {sensorsToQuery.length}/{sensorsAvailableForParameter} sensores del parámetro.
+          </div>
+        )}
 
         {loading && data.length === 0 ? (
           <div className="h-72 flex items-center justify-center text-muted-foreground">Cargando…</div>

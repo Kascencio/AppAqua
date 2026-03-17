@@ -5,8 +5,8 @@
  * Proporciona métodos tipo-seguros para todos los endpoints REST disponibles.
  */
 
-// En el navegador: usar proxy same-origin para evitar CORS y evitar conflictos con route handlers locales en /api/*.
-// En Node (scripts): llamar directo al backend externo.
+// En navegador y servidor de Next: usar route handlers locales en /api/*.
+// Si se ejecuta en scripts Node fuera de Next, el baseUrl puede apuntar directo al backend externo.
 const EXTERNAL_BACKEND_URL =
   process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
   process.env.EXTERNAL_API_URL ||
@@ -14,7 +14,7 @@ const EXTERNAL_BACKEND_URL =
 
 const IS_SERVER = typeof window === 'undefined'
 const API_BASE_URL = IS_SERVER ? EXTERNAL_BACKEND_URL : ''
-const API_PREFIX = IS_SERVER ? '/api' : '/external-api'
+const API_PREFIX = '/api'
 
 // ============================================
 // Types & Interfaces
@@ -152,6 +152,18 @@ export interface Promedio {
   muestras?: number
 }
 
+export interface PromediosBatchSensor {
+  id_sensor_instalado: number
+  bucket_minutes: number
+  puntos: Promedio[]
+}
+
+export interface PromediosBatchResponse {
+  bucket_minutes: number
+  total_sensores: number
+  sensores: PromediosBatchSensor[]
+}
+
 export interface Especie {
   id_especie: number
   // En el backend actual el catálogo suele exponer solo { id_especie, nombre }
@@ -194,6 +206,43 @@ export interface EspecieParametro {
   [key: string]: unknown
 }
 
+export interface CrecimientoOstionMedicion {
+  id_crecimiento_ostion_medicion?: number
+  lote_numero: number
+  valor: number
+  unidad: "cm" | "kg"
+  observaciones?: string | null
+  fecha_creacion?: string
+  ultima_modificacion?: string
+}
+
+export interface CrecimientoOstionCaptura {
+  id_crecimiento_ostion_captura?: number
+  numero_captura: number
+  fecha_programada: string | null
+  fecha_real?: string | null
+  estado: "pendiente" | "parcial" | "completada"
+  es_extra?: boolean
+  observaciones?: string | null
+  total_mediciones?: number
+  mediciones?: CrecimientoOstionMedicion[]
+  fecha_creacion?: string
+  ultima_modificacion?: string
+}
+
+export interface CrecimientoOstionConfig {
+  id_crecimiento_ostion_config?: number
+  id_proceso?: number
+  capturas_requeridas: number
+  lotes_por_captura: number
+  calendario_modo?: "automatico" | "manual"
+  total_capturas?: number
+  capturas_completadas?: number
+  capturas?: CrecimientoOstionCaptura[]
+  fecha_creacion?: string
+  ultima_modificacion?: string
+}
+
 export interface Proceso {
   id_proceso: number
   id_instalacion: number
@@ -209,6 +258,7 @@ export interface Proceso {
   estado: 'planificado' | 'en_progreso' | 'pausado' | 'completado' | 'cancelado'
   created_at: string
   updated_at: string
+  crecimiento_ostion?: CrecimientoOstionConfig | null
 }
 
 export interface Usuario {
@@ -297,15 +347,15 @@ class HttpClient {
   }
 
   private mapExternalToLocalEndpoint(endpoint: string): string {
-    // Map explícito para auth (evita /api/login inexistente)
-    if (endpoint === '/external-api/login') return '/api/auth/login'
-    if (endpoint === '/external-api/logout') return '/api/auth/logout'
-    if (endpoint === '/external-api/me') return '/api/auth/me'
-    if (endpoint === '/external-api/refresh') return '/api/auth/refresh'
-    if (endpoint === '/external-api/register') return '/api/auth/register'
+    // Compatibilidad con despliegues legacy que aún usan /external-api/*
+    if (endpoint === '/external-api/login' || endpoint === '/api/login') return '/api/auth/login'
+    if (endpoint === '/external-api/logout' || endpoint === '/api/logout') return '/api/auth/logout'
+    if (endpoint === '/external-api/me' || endpoint === '/api/me') return '/api/auth/me'
+    if (endpoint === '/external-api/refresh' || endpoint === '/api/refresh') return '/api/auth/refresh'
+    if (endpoint === '/external-api/register' || endpoint === '/api/register') return '/api/auth/register'
+    if (endpoint.startsWith('/external-api/')) return endpoint.replace('/external-api/', '/api/')
 
-    // Resto de endpoints: misma ruta pero bajo /api/*
-    return endpoint.replace('/external-api/', '/api/')
+    return endpoint
   }
 
   private async doFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -385,7 +435,7 @@ class HttpClient {
 
       return this.cloneData(data)
     } catch (error) {
-      // Fallback en navegador: si falla el proxy externo, intentar route handlers locales en /api/*
+      // Fallback en navegador: si falla un endpoint legacy /external-api, remapear a /api/*
       const isBrowser = typeof window !== 'undefined'
       const canFallback = endpoint.startsWith('/external-api/')
       const isProxyDown =
@@ -623,6 +673,15 @@ export class BackendApiClient {
     return this.http.get<Promedio[]>(`${API_PREFIX}/promedios`, params)
   }
 
+  async getPromediosBatch(params: {
+    sensorInstaladoIds: number[]
+    bucketMinutes: number
+    desde?: string
+    hasta?: string
+  }) {
+    return this.http.get<PromediosBatchResponse>(`${API_PREFIX}/promedios-batch`, params)
+  }
+
   async getLectura(id: number) {
     return this.http.get<ApiResponse<Lectura>>(`${API_PREFIX}/lecturas/${id}`)
   }
@@ -707,6 +766,62 @@ export class BackendApiClient {
     return this.http.delete<ApiResponse<{ id_proceso: number }>>(`${API_PREFIX}/procesos/${id}`)
   }
 
+  async getProcesoCrecimientoOstion(id: number) {
+    return this.http.get<CrecimientoOstionConfig | null>(`${API_PREFIX}/procesos/${id}/crecimiento-ostion`)
+  }
+
+  async updateProcesoCrecimientoOstion(id: number, data: CrecimientoOstionConfig) {
+    return this.http.put<CrecimientoOstionConfig>(`${API_PREFIX}/procesos/${id}/crecimiento-ostion`, data)
+  }
+
+  async createProcesoCrecimientoOstionCaptura(
+    id: number,
+    data: {
+      fecha_programada: string
+      fecha_real?: string | null
+      estado?: "pendiente" | "parcial" | "completada"
+      observaciones?: string
+    },
+  ) {
+    return this.http.post<CrecimientoOstionConfig>(`${API_PREFIX}/procesos/${id}/crecimiento-ostion/capturas`, data)
+  }
+
+  async updateProcesoCrecimientoOstionCaptura(
+    id: number,
+    capturaId: number,
+    data: {
+      fecha_programada?: string
+      fecha_real?: string | null
+      estado?: "pendiente" | "parcial" | "completada"
+      observaciones?: string
+    },
+  ) {
+    return this.http.put<CrecimientoOstionConfig>(
+      `${API_PREFIX}/procesos/${id}/crecimiento-ostion/capturas/${capturaId}`,
+      data,
+    )
+  }
+
+  async saveProcesoCrecimientoOstionMediciones(
+    id: number,
+    capturaId: number,
+    data: {
+      fecha_real?: string | null
+      observaciones?: string
+      mediciones: Array<{
+        lote_numero: number
+        valor: number
+        unidad: "cm" | "kg"
+        observaciones?: string
+      }>
+    },
+  ) {
+    return this.http.post<CrecimientoOstionConfig>(
+      `${API_PREFIX}/procesos/${id}/crecimiento-ostion/capturas/${capturaId}/mediciones`,
+      data,
+    )
+  }
+
   // ========================================
   // USUARIOS
   // ========================================
@@ -738,10 +853,10 @@ export class BackendApiClient {
   async login(email: string, password: string) {
     const payload = { correo: email, password }
     try {
-      // Flujo principal: backend externo (proxy /external-api en navegador)
+      // Flujo principal via route handlers locales /api/*
       return await this.http.post<any>(`${API_PREFIX}/login`, payload)
     } catch (error) {
-      // Fallback para despliegues donde el backend externo no responde (502/timeout)
+      // Fallback defensivo (mantiene compatibilidad con path de auth explícito)
       const isBrowser = typeof window !== 'undefined'
       const isGatewayError =
         error instanceof BackendApiError && (error.statusCode === 502 || error.statusCode === 0)

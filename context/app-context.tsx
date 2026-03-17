@@ -14,7 +14,7 @@ import type {
   Lectura
 } from "@/types"
 import { api } from "@/lib/api"
-import { toast } from "sonner"
+import { toast } from "@/hooks/use-toast"
 import { useAuth } from "@/context/auth-context"
 
 interface AppContextType {
@@ -47,6 +47,7 @@ const APP_CONTEXT_CACHE_KEY = "aqua:app-context:v1"
 const APP_CONTEXT_CACHE_TTL_MS = 60_000
 const APP_CONTEXT_MIN_REFETCH_INTERVAL_MS = 20_000
 const ALERTS_WS_RECONNECT_MS = 3_000
+const ALERTS_WS_TOAST_DEDUP_MS = 8_000
 
 function buildNotificationsWsUrl(): string | null {
   const explicit = process.env.NEXT_PUBLIC_WS_NOTIFICATIONS_URL
@@ -73,6 +74,19 @@ function mapAlertaFromApi(raw: any): Alerta | null {
   const id = Number(raw?.id_alertas ?? raw?.id_alerta ?? raw?.id)
   if (!Number.isFinite(id) || id <= 0) return null
 
+  const sensorInstaladoId = Number(
+    raw?.id_sensor_instalado ??
+      raw?.sensor_instalado?.id_sensor_instalado ??
+      raw?.sensor?.id_sensor_instalado ??
+      raw?.sensor?.id,
+  )
+  const instalacionId = Number(
+    raw?.id_instalacion ??
+      raw?.sensor_instalado?.id_instalacion ??
+      raw?.instalacion?.id_instalacion ??
+      0,
+  )
+
   const read = typeof raw?.read === "boolean"
     ? raw.read
     : typeof raw?.leida === "boolean"
@@ -95,8 +109,8 @@ function mapAlertaFromApi(raw: any): Alerta | null {
     ...raw,
     id_alertas: id,
     id_alerta: id,
-    id_instalacion: Number(raw?.id_instalacion ?? 0),
-    id_sensor_instalado: Number(raw?.id_sensor_instalado ?? 0),
+    id_instalacion: Number.isFinite(instalacionId) ? instalacionId : 0,
+    id_sensor_instalado: Number.isFinite(sensorInstaladoId) ? sensorInstaladoId : 0,
     descripcion,
     dato_puntual: Number.isFinite(datoPuntual) ? datoPuntual : 0,
     fecha,
@@ -122,6 +136,24 @@ function upsertAlertById(previous: Alerta[], incoming: Alerta): Alerta[] {
   const next = [...previous]
   next[index] = { ...next[index], ...incoming }
   return next.sort((a, b) => Number(b.id_alertas) - Number(a.id_alertas))
+}
+
+function shouldEmitLiveToast(cache: Map<string, number>, key: string): boolean {
+  const now = Date.now()
+
+  for (const [entryKey, ts] of cache.entries()) {
+    if (now - ts > ALERTS_WS_TOAST_DEDUP_MS) {
+      cache.delete(entryKey)
+    }
+  }
+
+  const lastTs = cache.get(key)
+  if (lastTs && now - lastTs < ALERTS_WS_TOAST_DEDUP_MS) {
+    return false
+  }
+
+  cache.set(key, now)
+  return true
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -153,6 +185,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const hasLoadedOnceRef = useRef(false)
   const hasHydratedCacheRef = useRef(false)
   const lastFetchedAtRef = useRef(0)
+  const liveToastCacheRef = useRef(new Map<string, number>())
 
   const hydrateFromCache = useCallback((): boolean => {
     if (typeof window === "undefined") return false
@@ -433,7 +466,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error("Error fetching data:", err)
       setError(err.message || "Error al cargar datos")
       if (err?.status !== 401) {
-        toast.error("Error al cargar datos del sistema")
+        toast({
+          title: "Error",
+          description: "Error al cargar datos del sistema",
+          variant: "destructive",
+        })
       }
     } finally {
       setIsLoading(false)
@@ -458,6 +495,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }, ALERTS_WS_RECONNECT_MS)
     }
 
+    const emitLiveToast = (key: string, payload: { title: string; description: string; variant?: "default" | "destructive" }) => {
+      if (!shouldEmitLiveToast(liveToastCacheRef.current, key)) return
+      toast(payload)
+    }
+
     const connect = () => {
       if (disposed) return
 
@@ -478,6 +520,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (!Number.isFinite(deletedId) || deletedId <= 0) return
 
             setAlerts((prev) => prev.filter((item) => Number(item.id_alertas) !== deletedId))
+            emitLiveToast(`alerta.deleted:${deletedId}`, {
+              title: "Notificación eliminada",
+              description: `La alerta #${deletedId} fue eliminada del sistema.`,
+            })
             return
           }
 
@@ -488,6 +534,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (ids.length === 0) return
             const idsSet = new Set(ids)
             setAlerts((prev) => prev.filter((item) => !idsSet.has(Number(item.id_alertas))))
+            emitLiveToast(`alertas.deleted.bulk:${ids.join(",")}`, {
+              title: "Notificaciones eliminadas",
+              description: `Se eliminaron ${ids.length} notificación(es) en bloque.`,
+            })
             return
           }
 
@@ -506,6 +556,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   : item,
               ),
             )
+            emitLiveToast(`alertas.read-all:${ids.join(",")}:${read ? "1" : "0"}`, {
+              title: read ? "Notificaciones leídas" : "Notificaciones actualizadas",
+              description: `${ids.length} notificación(es) cambiaron su estado.`,
+            })
             return
           }
 
@@ -515,6 +569,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (!mappedAlert) return
 
           setAlerts((prev) => upsertAlertById(prev, mappedAlert))
+          emitLiveToast(`${parsed.type}:${mappedAlert.id_alertas}`, {
+            title: parsed.type === "alerta.created" ? "Nueva notificación" : "Notificación actualizada",
+            description:
+              mappedAlert.descripcion ||
+              mappedAlert.title ||
+              `Alerta #${mappedAlert.id_alertas} actualizada desde monitoreo en vivo.`,
+            variant: parsed.type === "alerta.created" ? "destructive" : "default",
+          })
         } catch {
           // Ignore malformed WS payloads
         }

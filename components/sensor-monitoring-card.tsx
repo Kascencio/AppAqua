@@ -43,6 +43,10 @@ export function SensorMonitoringCard({
   
   // Extraer instalacionId del sensor o facilityId
   const instalacionId = sensor?.id_instalacion || sensor?.instalacion_id || facilityId
+  const parsedSensorId = Number(sensorId)
+  const parsedInstalacionId = Number(instalacionId)
+  const hasValidSensorId = Number.isFinite(parsedSensorId) && parsedSensorId > 0
+  const hasValidInstalacionId = Number.isFinite(parsedInstalacionId) && parsedInstalacionId > 0
 
   // Obtener datos históricos iniciales
   const { data: initialData, loading: initialLoading, error: initialError } = useSensorData(String(sensorId), from, to)
@@ -60,33 +64,33 @@ export function SensorMonitoringCard({
 
   // WebSocket para actualizaciones en tiempo real
   const { isConnected, lastMessage, error: wsError } = useWebSocket({
-    instalacionId: instalacionId as string,
-    sensorId: sensorId,
-    enabled: realTime && !!instalacionId,
+    instalacionId: parsedInstalacionId,
+    sensorId: parsedSensorId,
+    enabled: realTime && hasValidInstalacionId && hasValidSensorId,
     onMessage: (message) => {
-      if (message.sensorId === String(sensorId) && message.value !== undefined) {
-        const value = Number(message.value ?? 0)
-        const status = normalizeStatus(message.status)
-        setRealtimeData({
-          value,
-          timestamp: message.timestamp || new Date().toISOString(),
-          status,
+      if (!hasValidSensorId || Number(message.sensorId) !== parsedSensorId || message.value === undefined) return
+
+      const value = Number(message.value ?? 0)
+      const status = normalizeStatus(message.status)
+      setRealtimeData({
+        value,
+        timestamp: message.timestamp || new Date().toISOString(),
+        status,
+      })
+      setLastUpdate(new Date())
+
+      // Actualizar el último punto de datos
+      if (data.length > 0) {
+        setData((prev) => {
+          const newData = [...prev]
+          newData[newData.length - 1] = {
+            ...newData[newData.length - 1],
+            value,
+            timestamp: message.timestamp || new Date().toISOString(),
+            status,
+          }
+          return newData
         })
-        setLastUpdate(new Date())
-        
-        // Actualizar el último punto de datos
-        if (data.length > 0) {
-          setData((prev) => {
-            const newData = [...prev]
-            newData[newData.length - 1] = {
-              ...newData[newData.length - 1],
-              value,
-              timestamp: message.timestamp || new Date().toISOString(),
-              status,
-            }
-            return newData
-          })
-        }
       }
     },
     onError: () => {

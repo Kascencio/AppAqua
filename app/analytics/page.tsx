@@ -7,14 +7,15 @@ import { useAppContext } from "@/context/app-context"
 import { useAuth } from "@/context/auth-context"
 import { AnalyticsContent } from "@/components/analytics-content"
 import { DateRangePicker } from "@/components/date-range-picker"
-import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { startTransition, useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { backendApi, type Lectura } from "@/lib/backend-client"
 import { useRolePermissions } from "@/hooks/use-role-permissions"
 import { useSensors } from "@/hooks/use-sensors"
 import { useToast } from "@/hooks/use-toast"
 import { SensorAveragesChart } from "@/components/sensor-averages-chart"
+import { useAnalyticsSeries } from "@/hooks/use-analytics-series"
 import type { DateRange } from "react-day-picker"
-import { format, subDays, startOfToday, endOfToday, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
+import { format, subDays, startOfToday, endOfToday, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns"
 import { es } from "date-fns/locale"
 import { AnimatedNumber } from "@/components/animated-number"
 import { ParameterTrendChart } from "@/components/parameter-trend-chart"
@@ -29,6 +30,14 @@ type OptionWithCount = {
   count: number
 }
 
+type AnalyticsSummary = {
+  totalLecturas: number
+  lecturasHoy: number
+  promedioTemperatura: number
+  promedioPH: number
+  promedioOxigeno: number
+}
+
 const STATUS_LABELS: Record<string, string> = {
   active: "Activo",
   offline: "Desconectado",
@@ -38,6 +47,14 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const STATUS_ORDER = ["active", "alert", "maintenance", "offline", "inactive"]
+
+const EMPTY_ANALYTICS_SUMMARY: AnalyticsSummary = {
+  totalLecturas: 0,
+  lecturasHoy: 0,
+  promedioTemperatura: 0,
+  promedioPH: 0,
+  promedioOxigeno: 0,
+}
 
 function normalizeId(value: unknown): string {
   return String(value ?? "").trim()
@@ -65,40 +82,50 @@ function formatTimestampForExport(rawTimestamp: string): string {
   return Number.isFinite(d.getTime()) ? format(d, "dd/MM/yyyy HH:mm:ss", { locale: es }) : rawTimestamp
 }
 
+function weightedAverage(points: Array<{ promedio: number; muestras?: number }>): { avg: number; muestras: number } {
+  if (!points.length) return { avg: 0, muestras: 0 }
+
+  const weightedPoints = points.filter((point) => typeof point.muestras === "number" && Number(point.muestras) > 0)
+  if (weightedPoints.length > 0) {
+    const sumW = weightedPoints.reduce((acc, point) => acc + Number(point.muestras || 0), 0)
+    const sumWV = weightedPoints.reduce((acc, point) => acc + Number(point.promedio || 0) * Number(point.muestras || 0), 0)
+    return { avg: sumW > 0 ? sumWV / sumW : 0, muestras: sumW }
+  }
+
+  const sum = points.reduce((acc, point) => acc + Number(point.promedio || 0), 0)
+  return { avg: sum / points.length, muestras: points.length }
+}
+
+function hasSummaryChanged(left: AnalyticsSummary, right: AnalyticsSummary) {
+  return (
+    left.totalLecturas !== right.totalLecturas ||
+    left.lecturasHoy !== right.lecturasHoy ||
+    left.promedioTemperatura !== right.promedioTemperatura ||
+    left.promedioPH !== right.promedioPH ||
+    left.promedioOxigeno !== right.promedioOxigeno
+  )
+}
+
 export default function AnalyticsPage() {
   const context = useAppContext()
   const instalaciones = context?.instalaciones ?? []
   const procesos = context?.procesos ?? []
   const alerts = context?.alerts ?? []
   const stats = context?.stats
-  const contextLoading = context?.isLoading ?? false
 
   const { sensors } = useSensors()
   const { user } = useAuth()
   const { hasRestrictedAccess, allowedFacilities, allowedBranches } = useRolePermissions()
   const { toast } = useToast()
-  const [summary, setSummary] = useState({
-    totalLecturas: 0,
-    lecturasHoy: 0,
-    promedioTemperatura: 0,
-    promedioPH: 0,
-    promedioOxigeno: 0,
-  })
-  const [prevSummary, setPrevSummary] = useState(summary)
-  const summaryRef = useRef(summary)
-  const [isLoadingSummary, setIsLoadingSummary] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [exportScope, setExportScope] = useState<"all" | "top20">("top20")
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 })
-  const hasInitialData = useRef(false)
   const [timePreset, setTimePreset] = useState<TimePreset>("30d")
   const [exportFormat, setExportFormat] = useState<"csv" | "json">("csv")
   const [showFilters, setShowFilters] = useState(false)
   const [selectedSensorType, setSelectedSensorType] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
   const [selectedInstallation, setSelectedInstallation] = useState("all")
-  const [summaryCoverage, setSummaryCoverage] = useState({ queried: 0, total: 0 })
 
   const normalizeKey = (value: string) => value.trim().toLowerCase()
   const getTipoMedidaFromSensor = (sensor: any): string => {
@@ -344,44 +371,32 @@ export default function AnalyticsPage() {
   }, [])
 
   const [dateRange, setDateRange] = useState<DateRange>(() => getPresetDateRange("30d"))
+  const [prevSummary, setPrevSummary] = useState<AnalyticsSummary>(EMPTY_ANALYTICS_SUMMARY)
+  const summaryRef = useRef<AnalyticsSummary>(EMPTY_ANALYTICS_SUMMARY)
 
   // Handler para cambiar preset
   const handlePresetChange = useCallback((preset: TimePreset) => {
-    setTimePreset(preset)
-    if (preset !== "custom") {
-      setDateRange(getPresetDateRange(preset))
-    }
+    startTransition(() => {
+      setTimePreset(preset)
+      if (preset !== "custom") {
+        setDateRange(getPresetDateRange(preset))
+      }
+    })
   }, [getPresetDateRange])
 
   // Handler para cambiar rango personalizado
   const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange({
-      from: range.from ? startOfDay(range.from) : undefined,
-      to: range.to ? endOfDay(range.to) : undefined,
+    startTransition(() => {
+      setDateRange({
+        from: range.from ? startOfDay(range.from) : undefined,
+        to: range.to ? endOfDay(range.to) : undefined,
+      })
+      setTimePreset("custom")
     })
-    setTimePreset("custom")
   }, [])
 
   const fromLabel = dateRange.from ? format(dateRange.from, "dd MMM yyyy", { locale: es }) : "-"
   const toLabel = dateRange.to ? format(dateRange.to, "dd MMM yyyy", { locale: es }) : "-"
-
-  function computeBucketMinutes(from: Date, to: Date, targetPoints = 200): number {
-    const totalMinutes = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 60000))
-    const bucket = Math.ceil(totalMinutes / targetPoints)
-    return Math.max(5, bucket)
-  }
-
-  function startOfDay(d: Date): Date {
-    const x = new Date(d)
-    x.setHours(0, 0, 0, 0)
-    return x
-  }
-
-  function endOfDay(d: Date): Date {
-    const x = new Date(d)
-    x.setHours(23, 59, 59, 999)
-    return x
-  }
 
   // Detectar tipo de sensor por nombre
   function detectType(name: string, type?: string, unit?: string): string {
@@ -413,20 +428,78 @@ export default function AnalyticsPage() {
     return 'other'
   }
 
-  async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-    const results: R[] = new Array(items.length) as any
-    let idx = 0
+  const {
+    seriesBySensor,
+    coverage: summaryCoverage,
+    sensorsToQuery,
+    loading: isLoadingSummary,
+    isRefreshing,
+  } = useAnalyticsSeries(dateRange, filteredSensors)
 
-    const workers = new Array(Math.max(1, limit)).fill(0).map(async () => {
-      while (idx < items.length) {
-        const current = idx++
-        results[current] = await fn(items[current])
+  const summary = useMemo<AnalyticsSummary>(() => {
+    if (!dateRange.from || !dateRange.to || sensorsToQuery.length === 0) {
+      return EMPTY_ANALYTICS_SUMMARY
+    }
+
+    const today = new Date()
+    const todayStart = startOfDay(today)
+    const todayEnd = endOfDay(today)
+    const rangeIncludesToday = dateRange.from <= todayEnd && dateRange.to >= todayStart
+    const todayStartMs = todayStart.getTime()
+    const todayEndMs = todayEnd.getTime()
+    const coverageFactor = sensorsToQuery.length > 0 ? summaryCoverage.total / sensorsToQuery.length : 1
+
+    let totalLecturasMuestra = 0
+    let lecturasHoyMuestra = 0
+    const pointsByType = new Map<string, Array<{ promedio: number; muestras?: number }>>()
+
+    for (const sensor of sensorsToQuery) {
+      const sensorId = Number(sensor?.id_sensor_instalado || 0)
+      if (!sensorId) continue
+
+      const sensorType = detectType(String(sensor?.name || sensor?.descripcion || ""), getTipoMedidaFromSensor(sensor), String(sensor?.unit || ""))
+      const currentTypePoints = pointsByType.get(sensorType) ?? []
+      const points = seriesBySensor.get(sensorId) ?? []
+
+      for (const point of points) {
+        const timestamp = new Date(point.timestamp).getTime()
+        if (!Number.isFinite(timestamp) || timestamp < dateRange.from.getTime() || timestamp > dateRange.to.getTime()) {
+          continue
+        }
+
+        const muestrasRaw = Number(point.muestras)
+        const muestras = Number.isFinite(muestrasRaw) && muestrasRaw > 0 ? muestrasRaw : 1
+        totalLecturasMuestra += muestras
+        if (rangeIncludesToday && timestamp >= todayStartMs && timestamp <= todayEndMs) {
+          lecturasHoyMuestra += muestras
+        }
+        currentTypePoints.push(point)
       }
-    })
 
-    await Promise.all(workers)
-    return results
-  }
+      pointsByType.set(sensorType, currentTypePoints)
+    }
+
+    const temperatura = weightedAverage(pointsByType.get("temperature") ?? [])
+    const ph = weightedAverage(pointsByType.get("ph") ?? [])
+    const oxigeno = weightedAverage(pointsByType.get("oxygen") ?? [])
+
+    return {
+      totalLecturas: Math.round(totalLecturasMuestra * coverageFactor),
+      lecturasHoy: rangeIncludesToday ? Math.round(lecturasHoyMuestra * coverageFactor) : 0,
+      promedioTemperatura: Number.isFinite(temperatura.avg) ? temperatura.avg : 0,
+      promedioPH: Number.isFinite(ph.avg) ? ph.avg : 0,
+      promedioOxigeno: Number.isFinite(oxigeno.avg) ? oxigeno.avg : 0,
+    }
+  }, [dateRange.from, dateRange.to, sensorsToQuery, seriesBySensor, summaryCoverage.total])
+
+  useEffect(() => {
+    if (!hasSummaryChanged(summaryRef.current, summary)) {
+      return
+    }
+
+    setPrevSummary(summaryRef.current)
+    summaryRef.current = summary
+  }, [summary])
 
   async function fetchAllLecturasForSensor(
     sensorInstaladoId: number,
@@ -766,153 +839,6 @@ export default function AnalyticsPage() {
     user?.email,
     user?.name,
   ])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const fetchSummary = async () => {
-      try {
-        if (!dateRange.from || !dateRange.to) return
-
-        if (!hasInitialData.current) {
-          setIsLoadingSummary(true)
-        } else {
-          setIsRefreshing(true)
-        }
-
-        const desde = dateRange.from.toISOString()
-        const hasta = dateRange.to.toISOString()
-
-        const sensorsSource = filteredSensors
-        if (!sensorsSource || sensorsSource.length === 0) {
-          if (!cancelled) {
-            setPrevSummary(summaryRef.current)
-            setSummary({ totalLecturas: 0, lecturasHoy: 0, promedioTemperatura: 0, promedioPH: 0, promedioOxigeno: 0 })
-            setSummaryCoverage({ queried: 0, total: 0 })
-            hasInitialData.current = true
-          }
-          return
-        }
-
-        const MAX_SUMMARY_SENSORS = 24
-        const sensorsToQuery = sensorsSource.slice(0, MAX_SUMMARY_SENSORS)
-        const coverageFactor = sensorsToQuery.length > 0 ? sensorsSource.length / sensorsToQuery.length : 1
-        if (!cancelled) {
-          setSummaryCoverage({ queried: sensorsToQuery.length, total: sensorsSource.length })
-        }
-        const bucketMinutes = computeBucketMinutes(dateRange.from, dateRange.to, 100)
-        const today = new Date()
-        const todayStart = startOfDay(today)
-        const todayEnd = endOfDay(today)
-        const rangeIncludesToday = dateRange.from <= todayEnd && dateRange.to >= todayStart
-        const todayStartMs = todayStart.getTime()
-        const todayEndMs = todayEnd.getTime()
-
-        // Una sola consulta por sensor para resumen, promedios y conteos aproximados de lecturas.
-        const promediosBySensor = await mapWithConcurrency(
-          sensorsToQuery,
-          3,
-          async (s: any) => {
-            const id = Number(s.id_sensor_instalado)
-            const rawTipo = getTipoMedidaFromSensor(s)
-            const sensorType = detectType(String(s.name || s.descripcion || ""), rawTipo, s.unit)
-            if (!id) return { type: sensorType, promedios: [] as any[] }
-            try {
-              const resp = await backendApi
-                .getPromedios({
-                  sensorInstaladoId: id,
-                  bucketMinutes,
-                  desde,
-                  hasta,
-                })
-                .catch(() => [] as any[])
-
-              const arr = Array.isArray(resp) ? resp : []
-              const filtered = arr.filter((p: any) => {
-                const t = new Date(p?.timestamp).getTime()
-                return Number.isFinite(t) && t >= dateRange.from!.getTime() && t <= dateRange.to!.getTime()
-              })
-
-              return { type: sensorType, promedios: filtered }
-            } catch {
-              return { type: sensorType, promedios: [] as any[] }
-            }
-          },
-        )
-
-        let totalLecturasMuestra = 0
-        let lecturasHoyMuestra = 0
-        for (const item of promediosBySensor) {
-          for (const p of item.promedios || []) {
-            const muestrasRaw = Number((p as any).muestras)
-            const muestras = Number.isFinite(muestrasRaw) && muestrasRaw > 0 ? muestrasRaw : 1
-            totalLecturasMuestra += muestras
-
-            if (rangeIncludesToday) {
-              const t = new Date((p as any).timestamp).getTime()
-              if (Number.isFinite(t) && t >= todayStartMs && t <= todayEndMs) {
-                lecturasHoyMuestra += muestras
-              }
-            }
-          }
-        }
-
-        const totalLecturas = Math.round(totalLecturasMuestra * coverageFactor)
-        const lecturasHoy = rangeIncludesToday ? Math.round(lecturasHoyMuestra * coverageFactor) : 0
-
-        const weighted = (arr: any[]): { avg: number; muestras: number } => {
-          const rows = (arr || []).filter(Boolean)
-          const withM = rows.filter((p: any) => typeof p.muestras === "number" && Number(p.muestras) > 0)
-          if (withM.length) {
-            const sumW = withM.reduce((acc: number, p: any) => acc + Number(p.muestras || 0), 0)
-            const sumWV = withM.reduce((acc: number, p: any) => acc + Number(p.promedio || 0) * Number(p.muestras || 0), 0)
-            return { avg: sumW > 0 ? sumWV / sumW : 0, muestras: sumW }
-          }
-          const sum = rows.reduce((acc: number, p: any) => acc + Number(p.promedio || 0), 0)
-          return { avg: rows.length ? sum / rows.length : 0, muestras: rows.length }
-        }
-
-        const temp = weighted(promediosBySensor.filter((x) => x.type === "temperature").flatMap((x) => x.promedios))
-        const ph = weighted(promediosBySensor.filter((x) => x.type === "ph").flatMap((x) => x.promedios))
-        const ox = weighted(promediosBySensor.filter((x) => x.type === "oxygen").flatMap((x) => x.promedios))
-
-        if (!cancelled) {
-          const nextSummary = {
-            totalLecturas,
-            lecturasHoy,
-            promedioTemperatura: Number.isFinite(temp.avg) ? temp.avg : 0,
-            promedioPH: Number.isFinite(ph.avg) ? ph.avg : 0,
-            promedioOxigeno: Number.isFinite(ox.avg) ? ox.avg : 0,
-          }
-          setPrevSummary(summaryRef.current)
-          summaryRef.current = nextSummary
-          setSummary(nextSummary)
-          hasInitialData.current = true
-        }
-      } catch (e) {
-        console.error("[AnalyticsPage] Error fetching summary:", e)
-        if (!cancelled) {
-          hasInitialData.current = true
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingSummary(false)
-          setIsRefreshing(false)
-        }
-      }
-    }
-
-    // Debounce para evitar múltiples requests al cambiar fechas rápido
-    const id = setTimeout(fetchSummary, 250)
-    return () => {
-      cancelled = true
-      clearTimeout(id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateRange.from, dateRange.to, filteredSensors])
-
-  // Mantener variables por compatibilidad futura; evitamos bloquear UI.
-  void contextLoading
 
   // Calcular métricas de análisis
   const scopedAlertsFromSensors = filteredSensors.filter((sensor: any) => sensor.status === "alert").length
@@ -1269,11 +1195,25 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid gap-4">
-        <SensorAveragesChart dateRange={dateRange} sensors={filteredSensors} />
+        <SensorAveragesChart
+          dateRange={dateRange}
+          sensors={filteredSensors}
+          seriesBySensor={seriesBySensor}
+          loading={isLoadingSummary}
+          isRefreshing={isRefreshing}
+          coverage={summaryCoverage}
+        />
       </div>
 
       <div className="grid gap-4">
-        <ParameterTrendChart dateRange={dateRange} sensors={filteredSensors} />
+        <ParameterTrendChart
+          dateRange={dateRange}
+          sensors={filteredSensors}
+          seriesBySensor={seriesBySensor}
+          loading={isLoadingSummary}
+          isRefreshing={isRefreshing}
+          coverage={summaryCoverage}
+        />
       </div>
 
       {/* Contenido principal de análisis */}

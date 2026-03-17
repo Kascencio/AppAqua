@@ -72,6 +72,7 @@ export function useProcesses() {
           dias_originales: diasOriginales,
           dias_totales: diasTotales,
           fecha_fin_real: row.fecha_fin_real,
+          crecimiento_ostion: row.crecimiento_ostion ?? null,
         }
       })
 
@@ -106,6 +107,7 @@ export function useProcesses() {
         nombre_proceso: raw.nombre_proceso ?? raw.nombre,
         descripcion: raw.descripcion,
         objetivos: raw.objetivos,
+        crecimiento_ostion: raw.crecimiento_ostion,
       }
 
       await backendApi.createProceso(payload as any)
@@ -144,6 +146,7 @@ export function useProcesses() {
         ...(raw.descripcion !== undefined ? { descripcion: raw.descripcion } : {}),
         ...(raw.objetivos !== undefined ? { objetivos: raw.objetivos } : {}),
         ...(procesoData.estado !== undefined ? { estado: toBackendStatus(procesoData.estado) } : {}),
+        ...(raw.crecimiento_ostion !== undefined ? { crecimiento_ostion: raw.crecimiento_ostion } : {}),
       }
 
       await backendApi.updateProceso(id, payload as any)

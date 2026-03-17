@@ -5,7 +5,15 @@ const RAW_BACKEND_URL =
   process.env.EXTERNAL_API_URL ||
   "http://195.35.11.179:3300"
 
-const BACKEND_URL = RAW_BACKEND_URL.replace(/\/$/, "")
+function normalizeBackendUrl(rawUrl: string): string {
+  const raw = rawUrl.trim().replace(/^['"]|['"]$/g, "")
+  if (!raw) return "http://195.35.11.179:3300"
+  if (/^\d+$/.test(raw)) return `http://127.0.0.1:${raw}`
+  if (!/^https?:\/\//i.test(raw)) return `http://${raw}`
+  return raw.replace(/\/$/, "")
+}
+
+const BACKEND_URL = normalizeBackendUrl(RAW_BACKEND_URL)
 const METHODS_WITH_BODY = new Set(["POST", "PUT", "PATCH", "DELETE"])
 
 function mapApiPath(pathname: string): string {
