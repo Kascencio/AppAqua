@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server"
 const RAW_BACKEND_URL =
   process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
   process.env.EXTERNAL_API_URL ||
-  "http://195.35.11.179:3300"
+  "http://195.35.11.179:3200"
 
 function normalizeBackendUrl(rawUrl: string): string {
   const raw = rawUrl.trim().replace(/^['"]|['"]$/g, "")
-  if (!raw) return "http://195.35.11.179:3300"
+  if (!raw) return "http://195.35.11.179:3200"
   if (/^\d+$/.test(raw)) return `http://127.0.0.1:${raw}`
   if (!/^https?:\/\//i.test(raw)) return `http://${raw}`
   return raw.replace(/\/$/, "")
