@@ -6,6 +6,10 @@ interface RequestOptions extends RequestInit {
   headers?: Record<string, string>
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError"
+}
+
 export class ApiHttpError extends Error {
   status: number
   details: unknown
@@ -162,7 +166,7 @@ class ApiClient {
 
       return this.cloneData(data)
     } catch (error: any) {
-      if (!(error instanceof ApiHttpError && (error.status === 401 || error.status === 403))) {
+      if (!isAbortError(error) && !(error instanceof ApiHttpError && (error.status === 401 || error.status === 403))) {
         console.error(`API Request failed for ${url}:`, error)
       }
       throw error

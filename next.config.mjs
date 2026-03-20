@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 
 /** @type {import('next').NextConfig} */
 function normalizeExternalBackendUrl(rawUrl) {
-  const fallback = "http://195.35.11.179:3200"
+  const fallback = "http://195.35.11.179:3100"
   const raw = (rawUrl || fallback).trim().replace(/^['"]|['"]$/g, "")
   if (!raw) return fallback
   if (/^\d+$/.test(raw)) return `http://127.0.0.1:${raw}`

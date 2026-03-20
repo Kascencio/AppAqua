@@ -17,6 +17,10 @@ function buildProcessReadingsCacheKey(idProceso: number, fechaInicio?: string, f
   return `${idProceso}|from:${fechaInicio || ""}|to:${fechaFin || ""}`
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError"
+}
+
 export function useLecturasPorProceso(id_proceso: number | null, fechaInicio?: string, fechaFin?: string) {
   const [lecturas, setLecturas] = useState<LecturaPorProceso[]>([])
   const [parametros, setParametros] = useState<ParametroMonitoreo[]>([])
@@ -40,10 +44,15 @@ export function useLecturasPorProceso(id_proceso: number | null, fechaInicio?: s
 
       const inflight = processReadingsInflight.get(cacheKey)
       if (inflight) {
-        const shared = await inflight
-        setLecturas(shared.lecturas)
-        setParametros(shared.parametros)
-        setLastUpdated(new Date())
+        try {
+          const shared = await inflight
+          setLecturas(shared.lecturas)
+          setParametros(shared.parametros)
+          setLastUpdated(new Date())
+        } catch (err) {
+          if (isAbortError(err)) return
+          setError(err instanceof Error ? err.message : "Error desconocido")
+        }
         return
       }
     }
@@ -80,8 +89,7 @@ export function useLecturasPorProceso(id_proceso: number | null, fechaInicio?: s
       setParametros(data.parametros)
       setLastUpdated(new Date())
     } catch (err) {
-      const isAbortError = err instanceof DOMException && err.name === "AbortError"
-      if (isAbortError) return
+      if (isAbortError(err)) return
       setError(err instanceof Error ? err.message : "Error desconocido")
     } finally {
       processReadingsInflight.delete(cacheKey)

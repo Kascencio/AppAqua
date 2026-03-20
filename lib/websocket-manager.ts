@@ -51,7 +51,7 @@ class WebSocketManager {
     const derived = external
       ? external.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/lecturas'
       : undefined
-    this.baseUrl = process.env.NEXT_PUBLIC_WS_URL || derived || 'ws://localhost:3200/ws/lecturas'
+    this.baseUrl = process.env.NEXT_PUBLIC_WS_URL || derived || 'ws://localhost:3100/ws/lecturas'
     
     // Cleanup al cerrar la página
     if (typeof window !== 'undefined') {

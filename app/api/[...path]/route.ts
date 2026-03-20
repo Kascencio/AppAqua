@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server"
 const RAW_BACKEND_URL =
   process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
   process.env.EXTERNAL_API_URL ||
-  "http://195.35.11.179:3200"
+  "http://195.35.11.179:3100"
 
 function normalizeBackendUrl(rawUrl: string): string {
   const raw = rawUrl.trim().replace(/^['"]|['"]$/g, "")
-  if (!raw) return "http://195.35.11.179:3200"
+  if (!raw) return "http://195.35.11.179:3100"
   if (/^\d+$/.test(raw)) return `http://127.0.0.1:${raw}`
   if (!/^https?:\/\//i.test(raw)) return `http://${raw}`
   return raw.replace(/\/$/, "")
@@ -72,6 +72,19 @@ async function proxyRequest(request: NextRequest): Promise<NextResponse> {
     }
 
     const upstream = await fetch(targetUrl, init)
+    if (!upstream.ok && upstream.status >= 500) {
+      const upstreamBody = await upstream
+        .clone()
+        .text()
+        .catch(() => "")
+
+      console.error("[API proxy] Upstream error", {
+        method: request.method,
+        targetUrl,
+        status: upstream.status,
+        body: upstreamBody.slice(0, 1000),
+      })
+    }
     const responseHeaders = new Headers(upstream.headers)
 
     responseHeaders.delete("connection")

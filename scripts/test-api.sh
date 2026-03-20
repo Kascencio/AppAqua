@@ -11,7 +11,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # URL del backend
-BACKEND_URL="http://195.35.11.179:3200"
+BACKEND_URL="http://195.35.11.179:3100"
 
 # Contadores
 TOTAL=0
@@ -89,7 +89,7 @@ test_endpoint "PRUEBA 6: PROCESOS" "/api/procesos?page=1&limit=10"
 
 # Prueba 7: Lecturas (con sensorInstaladoId obligatorio en camelCase)
 # Primero obtener un sensor ID válido
-SENSOR_ID=$(curl -s "http://195.35.11.179:3200/api/sensores-instalados?page=1&limit=1" | jq -r '.[0].id_sensor_instalado // 1')
+SENSOR_ID=$(curl -s "http://195.35.11.179:3100/api/sensores-instalados?page=1&limit=1" | jq -r '.[0].id_sensor_instalado // 1')
 DESDE=$(date -u -v-7d +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null || date -u -d "7 days ago" +"%Y-%m-%dT%H:%M:%S.000Z")
 HASTA=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 test_endpoint "PRUEBA 7: LECTURAS (Sensor $SENSOR_ID)" "/api/lecturas?sensorInstaladoId=$SENSOR_ID&page=1&limit=100&desde=$DESDE&hasta=$HASTA"
