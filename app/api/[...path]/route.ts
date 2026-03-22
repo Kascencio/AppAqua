@@ -34,6 +34,7 @@ function buildTargetUrl(request: NextRequest, mappedPath: string): string {
 function buildForwardHeaders(request: NextRequest): Headers {
   const headers = new Headers()
   const hopByHopHeaders = new Set([
+    "accept-encoding",
     "connection",
     "host",
     "content-length",
@@ -50,6 +51,10 @@ function buildForwardHeaders(request: NextRequest): Headers {
     if (hopByHopHeaders.has(key.toLowerCase())) return
     headers.set(key, value)
   })
+
+  // El proxy de Next/undici puede descomprimir upstream automáticamente.
+  // Forzamos identity para no reenviar un body decodificado con headers gzip/br.
+  headers.set("accept-encoding", "identity")
 
   return headers
 }
@@ -88,6 +93,8 @@ async function proxyRequest(request: NextRequest): Promise<NextResponse> {
     const responseHeaders = new Headers(upstream.headers)
 
     responseHeaders.delete("connection")
+    responseHeaders.delete("content-encoding")
+    responseHeaders.delete("content-length")
     responseHeaders.delete("transfer-encoding")
     responseHeaders.delete("keep-alive")
 

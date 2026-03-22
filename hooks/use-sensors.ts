@@ -88,12 +88,18 @@ function parseBackendStatus(rawStatus: unknown, activoFlag: unknown): SensorComp
   return "active"
 }
 
-function mapSensorsFast(sensores: any[], sucursales: any[]): SensorCompleto[] {
+function mapSensorsFast(sensores: any[], instalaciones: any[]): SensorCompleto[] {
+  const instalacionById = new Map<number, any>(
+    instalaciones
+      .map((inst) => [Number(inst.id_instalacion ?? 0), inst] as [number, any])
+      .filter(([id]) => Number(id) > 0),
+  )
+
   const sucursalNombreById = new Map<number, string>(
-    sucursales
-      .map((s) => [
-        Number(s.id_sucursal ?? s.id_organizacion_sucursal ?? 0),
-        String(s.nombre ?? s.nombre_sucursal ?? ""),
+    instalaciones
+      .map((inst) => [
+        Number(inst.id_organizacion_sucursal ?? inst.id_empresa_sucursal ?? inst.id_sucursal ?? 0),
+        String(inst.sucursal_nombre ?? inst.nombre_empresa ?? inst.nombre_organizacion ?? ""),
       ] as [number, string])
       .filter(([id, name]) => Number(id) > 0 && !!name),
   )
@@ -103,7 +109,14 @@ function mapSensorsFast(sensores: any[], sucursales: any[]): SensorCompleto[] {
     const catalogo = (s as any).catalogo_sensores
     const rawInstalacionId = s.id_instalacion ?? inst?.id_instalacion ?? null
     const instalacionId = rawInstalacionId == null ? 0 : Number(rawInstalacionId)
-    const branchIdNum = Number(inst?.id_sucursal ?? inst?.id_organizacion_sucursal ?? (s as any).id_sucursal ?? 0)
+    const instalacionDetalle = instalacionById.get(instalacionId)
+    const branchIdNum = Number(
+      inst?.id_sucursal ??
+        inst?.id_organizacion_sucursal ??
+        instalacionDetalle?.id_organizacion_sucursal ??
+        (s as any).id_sucursal ??
+        0,
+    )
     const rawType = String((s as any).tipo_medida ?? (s as any).tipo ?? catalogo?.tipo_medida ?? catalogo?.tipo ?? "")
     const unit = String(catalogo?.unidad_medida ?? s.unidad_medida ?? "")
     const sensorName = String(catalogo?.nombre ?? s.descripcion ?? `Sensor ${s.id_sensor_instalado}`)
@@ -125,11 +138,18 @@ function mapSensorsFast(sensores: any[], sucursales: any[]): SensorCompleto[] {
       rango_medicion: catalogo?.rango_medicion ?? undefined,
       branchId: hasInstallation ? String(branchIdNum || "") : "",
       branchName: hasInstallation
-        ? (sucursalNombreById.get(branchIdNum) || `Sucursal ${branchIdNum || ""}`)
+        ? (String(instalacionDetalle?.sucursal_nombre ?? "") || sucursalNombreById.get(branchIdNum) || `Sucursal ${branchIdNum || ""}`)
         : "Sin sucursal",
       facilityId: hasInstallation ? String(instalacionId) : "",
       facilityName: hasInstallation
-        ? String((s as any).instalacion_nombre ?? inst?.nombre_instalacion ?? inst?.nombre ?? `Instalación ${instalacionId}`)
+        ? String(
+            (s as any).instalacion_nombre ??
+              inst?.nombre_instalacion ??
+              instalacionDetalle?.nombre_instalacion ??
+              inst?.nombre ??
+              instalacionDetalle?.nombre ??
+              `Instalación ${instalacionId}`,
+          )
         : "Sin instalación",
       status,
       lastReading: undefined,
@@ -139,18 +159,18 @@ function mapSensorsFast(sensores: any[], sucursales: any[]): SensorCompleto[] {
 }
 
 async function fetchSensorsFromApi(): Promise<SensorCompleto[]> {
-  const [sensoresResp, sucursalesResp] = await Promise.all([
+  const [sensoresResp, instalacionesResp] = await Promise.all([
     backendApi.getSensoresInstalados({ page: 1, limit: 1000 }).catch(() => [] as any),
-    backendApi.getSucursales({ page: 1, limit: 1000 }).catch(() => [] as any),
+    backendApi.getInstalaciones({ page: 1, limit: 1000 }).catch(() => [] as any),
   ])
 
   const sensoresPayload: any = sensoresResp
   const sensores: any[] = Array.isArray(sensoresPayload) ? sensoresPayload : sensoresPayload?.data || []
 
-  const sucursalesPayload: any = sucursalesResp
-  const sucursales: any[] = Array.isArray(sucursalesPayload) ? sucursalesPayload : sucursalesPayload?.data || []
+  const instalacionesPayload: any = instalacionesResp
+  const instalaciones: any[] = Array.isArray(instalacionesPayload) ? instalacionesPayload : instalacionesPayload?.data || []
 
-  return mapSensorsFast(sensores, sucursales)
+  return mapSensorsFast(sensores, instalaciones)
 }
 
 export function useSensors() {

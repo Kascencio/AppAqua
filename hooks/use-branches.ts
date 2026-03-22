@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useAuth } from "@/context/auth-context"
 import type { EmpresaSucursal } from "@/types/empresa-sucursal"
 import { empresaSucursalToBranch, Branch } from "@/types/empresa-sucursal"
 import { api } from "@/lib/api"
+import { canReadOrganizationDirectory, deriveDirectoryFromInstalaciones } from "@/lib/organization-directory"
 import { toast } from "sonner"
 
 function mapOrganizacionesYSucursales(orgs: any[], sucursales: any[]): Branch[] {
@@ -46,29 +48,45 @@ function mapOrganizacionesYSucursales(orgs: any[], sucursales: any[]): Branch[] 
 }
 
 export function useBranches() {
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth()
   const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
 
   const loadBranches = useCallback(async () => {
+    if (isAuthLoading) return
+    if (!isAuthenticated) {
+      setBranches([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
-      const [orgs, sucursales] = await Promise.all([
-        api.get<any[]>('/organizaciones').catch(() => []),
-        api.get<any[]>('/sucursales').catch(() => []),
-      ])
+      if (canReadOrganizationDirectory(user?.role)) {
+        const [orgs, sucursales] = await Promise.all([
+          api.get<any[]>('/organizaciones').catch(() => []),
+          api.get<any[]>('/sucursales').catch(() => []),
+        ])
 
-      setBranches(mapOrganizacionesYSucursales(orgs, sucursales))
+        setBranches(mapOrganizacionesYSucursales(orgs, sucursales))
+        return
+      }
+
+      const instalaciones = await api.get<any[]>("/instalaciones").catch(() => [])
+      const { organizaciones, sucursales } = deriveDirectoryFromInstalaciones(instalaciones)
+      setBranches([...organizaciones, ...sucursales].map(empresaSucursalToBranch))
     } catch (err) {
       console.error("Error loading branches:", err)
       setBranches([])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAuthLoading, isAuthenticated, user?.role])
 
   useEffect(() => {
+    if (isAuthLoading) return
     loadBranches()
-  }, [loadBranches])
+  }, [isAuthLoading, loadBranches])
 
   // Agregar sucursal
   const addBranch = async (newBranch: Omit<EmpresaSucursal, "id_empresa_sucursal" | "fecha_registro">) => {

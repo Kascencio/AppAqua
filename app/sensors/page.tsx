@@ -524,12 +524,14 @@ const summarizeSensorStatus = (sensorList: any[]) => {
 const HierarchicalOrganization = ({
   organizedData,
   viewMode,
+  canManageSensors,
   onToggleStatus,
   onEdit,
   onDelete,
 }: {
   organizedData: any
   viewMode: "simple" | "advanced" | "hierarchical"
+  canManageSensors: boolean
   onToggleStatus: (sensor: any) => void
   onEdit: (sensor: any) => void
   onDelete: (sensor: any) => void
@@ -592,6 +594,37 @@ const HierarchicalOrganization = ({
       ...summarizeSensorStatus(sensorList),
     }
   }, [organizedData])
+
+  const flattenedSensors = useMemo(() => {
+    const sensorList: any[] = []
+
+    Object.values(organizedData).forEach((companyData: any) => {
+      Object.values(companyData.branches || {}).forEach((branchData: any) => {
+        Object.values(branchData.installations || {}).forEach((installationData: any) => {
+          sensorList.push(...(installationData.sensors || []))
+        })
+      })
+    })
+
+    return sensorList
+  }, [organizedData])
+
+  if (viewMode === "simple") {
+    return (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {flattenedSensors.map((sensor: any) => (
+          <SimpleSensorCard
+            key={sensor.id_sensor_instalado}
+            sensor={sensor}
+            canManageSensors={canManageSensors}
+            onToggleStatus={onToggleStatus}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -786,29 +819,16 @@ const HierarchicalOrganization = ({
                                       </div>
                                     ) : (
                                       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                                        {installationSensors.map((sensor: any) => {
-                                          if (viewMode === "simple") {
-                                            return (
-                                              <SimpleSensorCard
-                                                key={sensor.id_sensor_instalado}
-                                                sensor={sensor}
-                                                onToggleStatus={onToggleStatus}
-                                                onEdit={onEdit}
-                                                onDelete={onDelete}
-                                              />
-                                            )
-                                          }
-
-                                          return (
-                                            <AdvancedSensorCard
-                                              key={sensor.id_sensor_instalado}
-                                              sensor={sensor}
-                                              onToggleStatus={onToggleStatus}
-                                              onEdit={onEdit}
-                                              onDelete={onDelete}
-                                            />
-                                          )
-                                        })}
+                                        {installationSensors.map((sensor: any) => (
+                                          <AdvancedSensorCard
+                                            key={sensor.id_sensor_instalado}
+                                            sensor={sensor}
+                                            canManageSensors={canManageSensors}
+                                            onToggleStatus={onToggleStatus}
+                                            onEdit={onEdit}
+                                            onDelete={onDelete}
+                                          />
+                                        ))}
                                       </div>
                                     )}
                                   </div>
@@ -833,11 +853,13 @@ const HierarchicalOrganization = ({
 // Vista Simple - Solo medidor grande con título e ID
 const SimpleSensorCard = ({
   sensor,
+  canManageSensors,
   onToggleStatus,
   onEdit,
   onDelete,
 }: {
   sensor: any
+  canManageSensors: boolean
   onToggleStatus: (sensor: any) => void
   onEdit: (sensor: any) => void
   onDelete: (sensor: any) => void
@@ -946,20 +968,33 @@ const SimpleSensorCard = ({
             </div>
             <p className="text-xs text-gray-500 font-mono">ID: {sensor.id_sensor_instalado || "N/A"}</p>
           </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleStatus(sensor)
-            }}
-            className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all duration-300 ${
-              isActive
-                ? "bg-green-100 text-green-800 hover:bg-green-200 border border-green-200"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
-            {isActive ? "ON" : "OFF"}
-          </button>
+          {canManageSensors ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleStatus(sensor)
+              }}
+              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all duration-300 ${
+                isActive
+                  ? "bg-green-100 text-green-800 hover:bg-green-200 border border-green-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
+              {isActive ? "ON" : "OFF"}
+            </button>
+          ) : (
+            <div
+              className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${
+                isActive
+                  ? "bg-green-100 text-green-800 border-green-200"
+                  : "bg-gray-100 text-gray-600 border-gray-200"
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
+              {isActive ? "Activo" : "Inactivo"}
+            </div>
+          )}
         </div>
 
         {/* Medidor grande que ocupa la mayor parte de la card */}
@@ -1026,19 +1061,21 @@ const SimpleSensorCard = ({
         </div>
 
         {/* Botones de acción minimalistas */}
-        <div className="flex justify-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-          <Button variant="outline" size="sm" onClick={() => onEdit(sensor)} className="h-8 px-3 text-xs">
-            <Edit className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-3 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 bg-transparent"
-            onClick={() => onDelete(sensor)}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
+        {canManageSensors && (
+          <div className="flex justify-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+            <Button variant="outline" size="sm" onClick={() => onEdit(sensor)} className="h-8 px-3 text-xs">
+              <Edit className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 bg-transparent"
+              onClick={() => onDelete(sensor)}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1047,11 +1084,13 @@ const SimpleSensorCard = ({
 // Vista Avanzada - Información técnica completa (componente existente)
 const AdvancedSensorCard = ({
   sensor,
+  canManageSensors,
   onToggleStatus,
   onEdit,
   onDelete,
 }: {
   sensor: any
+  canManageSensors: boolean
   onToggleStatus: (sensor: any) => void
   onEdit: (sensor: any) => void
   onDelete: (sensor: any) => void
@@ -1148,20 +1187,33 @@ const AdvancedSensorCard = ({
         {/* Header: Parameter Name + ON/OFF Switch */}
         <div className="flex justify-between items-start">
           <h3 className={`text-lg font-bold truncate flex-1 mr-2 ${statusInfo.titleColor}`}>{gaugeData.name}</h3>
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleStatus(sensor)
-            }}
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all duration-300 ${
-              isActive
-                ? "bg-green-100 text-green-800 hover:bg-green-200 border border-green-200"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
-            {isActive ? "ON" : "OFF"}
-          </button>
+          {canManageSensors ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleStatus(sensor)
+              }}
+              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all duration-300 ${
+                isActive
+                  ? "bg-green-100 text-green-800 hover:bg-green-200 border border-green-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200"
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
+              {isActive ? "ON" : "OFF"}
+            </button>
+          ) : (
+            <div
+              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${
+                isActive
+                  ? "bg-green-100 text-green-800 border-green-200"
+                  : "bg-gray-100 text-gray-600 border-gray-200"
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
+              {isActive ? "Activo" : "Inactivo"}
+            </div>
+          )}
         </div>
 
         {/* Sensor ID and Installation */}
@@ -1233,19 +1285,23 @@ const AdvancedSensorCard = ({
         {/* Action Buttons Row */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onEdit(sensor)} className="h-8 px-3 text-xs">
-              <Edit className="h-3 w-3 mr-1" />
-              Editar
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-3 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 bg-transparent"
-              onClick={() => onDelete(sensor)}
-            >
-              <Trash2 className="h-3 w-3 mr-1" />
-              Eliminar
-            </Button>
+            {canManageSensors && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => onEdit(sensor)} className="h-8 px-3 text-xs">
+                  <Edit className="h-3 w-3 mr-1" />
+                  Editar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 bg-transparent"
+                  onClick={() => onDelete(sensor)}
+                >
+                  <Trash2 className="h-3 w-3 mr-1" />
+                  Eliminar
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Expand/Collapse Button */}
@@ -1336,6 +1392,9 @@ export default function SensorsPage() {
   const [selectedSensor, setSelectedSensor] = useState<any | null>(null)
   const { toast } = useToast()
   const isSimpleOperatorView = user?.role === "standard" || user?.role === "operator"
+  const canManageSensors = user?.role === "superadmin"
+  const effectiveViewMode = isSimpleOperatorView ? "simple" : viewMode
+  const isMinimalSimpleLayout = effectiveViewMode === "simple"
   const sensorIdFromQuery = useMemo(() => {
     const raw = searchParams.get("sensorId")
     if (!raw) return null
@@ -1343,6 +1402,12 @@ export default function SensorsPage() {
     if (!Number.isFinite(parsed) || parsed <= 0) return null
     return parsed
   }, [searchParams])
+
+  useEffect(() => {
+    if (isSimpleOperatorView && viewMode !== "simple") {
+      setViewMode("simple")
+    }
+  }, [isSimpleOperatorView, viewMode])
 
   useEffect(() => {
     if (!sensorIdFromQuery) return
@@ -1355,6 +1420,12 @@ export default function SensorsPage() {
     setActiveTab("todos")
     setViewMode("simple")
   }, [sensorIdFromQuery])
+
+  useEffect(() => {
+    if (isMinimalSimpleLayout && activeTab !== "todos") {
+      setActiveTab("todos")
+    }
+  }, [isMinimalSimpleLayout, activeTab])
 
   // Memoize available facilities to prevent recalculation
   const availableFacilities = useMemo(() => {
@@ -1371,31 +1442,6 @@ export default function SensorsPage() {
 
     return { total, active, alert, offline, maintenance }
   }, [sensors])
-
-  const simpleFilteredSensors = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-
-    return sensors.filter((sensor) => {
-      if (query) {
-        const haystack = [
-          sensor.name,
-          sensor.branchName,
-          sensor.facilityName,
-          sensor.currentParameter,
-          sensor.id_sensor_instalado,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-
-        if (!haystack.includes(query)) return false
-      }
-
-      if (selectedStatus !== "todos" && sensor.status !== selectedStatus) return false
-      if (selectedFacility !== "todas" && sensor.facilityName !== selectedFacility) return false
-      return true
-    })
-  }, [searchQuery, selectedFacility, selectedStatus, sensors])
 
   // Organize sensors hierarchically: Company → Branch → Installation → Sensors
   const organizedSensors = useMemo(() => {
@@ -1605,247 +1651,110 @@ export default function SensorsPage() {
     )
   }
 
-  if (isSimpleOperatorView) {
-    return (
-      <div className="container max-w-6xl mx-auto px-4 py-6 space-y-6">
-        <PageHeader
-          title="Sensores"
-          description="Vista simple del estado actual de los sensores instalados"
-          icon={Activity}
-        />
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Activos</p>
-              <p className="text-3xl font-semibold text-green-600">{sensorStats.active}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Con atención</p>
-              <p className="text-3xl font-semibold text-amber-600">{sensorStats.alert + sensorStats.offline}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">En mantenimiento</p>
-              <p className="text-3xl font-semibold text-orange-600">{sensorStats.maintenance}</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardContent className="p-4 grid gap-4 md:grid-cols-[1fr_220px_220px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar sensor, instalación o sucursal"
-                className="pl-9"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-            </div>
-
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger>
-                <SelectValue placeholder="Todos los estados" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos los estados</SelectItem>
-                <SelectItem value="active">Activo</SelectItem>
-                <SelectItem value="alert">Alerta</SelectItem>
-                <SelectItem value="offline">Desconectado</SelectItem>
-                <SelectItem value="maintenance">Mantenimiento</SelectItem>
-                <SelectItem value="inactive">Inactivo</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={selectedFacility} onValueChange={setSelectedFacility}>
-              <SelectTrigger>
-                <SelectValue placeholder="Todas las instalaciones" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todas">Todas las instalaciones</SelectItem>
-                {availableFacilities.map((facility) => (
-                  <SelectItem key={facility} value={facility}>
-                    {facility}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
-
-        {(sensorStats.alert > 0 || sensorStats.offline > 0) && (
-          <Alert className="border-yellow-200 bg-yellow-50">
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-yellow-800">
-              Hay sensores que necesitan revisión. Prioriza los que aparecen con estado de alerta o desconectados.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {simpleFilteredSensors.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              No se encontraron sensores con los filtros actuales.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {simpleFilteredSensors.map((sensor) => {
-              const statusLabel =
-                sensor.status === "active"
-                  ? "Activo"
-                  : sensor.status === "alert"
-                    ? "Alerta"
-                    : sensor.status === "offline"
-                      ? "Desconectado"
-                      : sensor.status === "maintenance"
-                        ? "Mantenimiento"
-                        : "Inactivo"
-
-              const statusClass =
-                sensor.status === "active"
-                  ? "bg-green-100 text-green-700"
-                  : sensor.status === "alert" || sensor.status === "offline"
-                    ? "bg-red-100 text-red-700"
-                    : "bg-amber-100 text-amber-700"
-
-              return (
-                <Card key={sensor.id_sensor_instalado}>
-                  <CardContent className="p-5 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h2 className="font-semibold text-lg">{sensor.name || `Sensor ${sensor.id_sensor_instalado}`}</h2>
-                        <p className="text-sm text-muted-foreground">ID #{sensor.id_sensor_instalado}</p>
-                      </div>
-                      <Badge className={statusClass}>{statusLabel}</Badge>
-                    </div>
-
-                    <div className="grid gap-2 text-sm text-muted-foreground">
-                      <p>Instalación: {sensor.facilityName || "Sin instalación"}</p>
-                      <p>Sucursal: {sensor.branchName || "Sin sucursal"}</p>
-                      <p>Parámetro: {sensor.currentParameter || sensor.type || "Sin parámetro"}</p>
-                    </div>
-
-                    <div className="rounded-lg border bg-muted/40 p-3">
-                      <p className="text-sm text-muted-foreground">Última lectura</p>
-                      <p className="text-2xl font-semibold">
-                        {typeof sensor.lastReading === "number" ? sensor.lastReading.toFixed(2) : "--"}
-                        <span className="text-sm font-normal text-muted-foreground ml-1">{sensor.unit || ""}</span>
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="container max-w-7xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-4 sm:space-y-8">
       <PageHeader
         title="Sensores"
         description="Gestión y configuración de sensores multiparamétricos"
         icon={Activity}
-        actions={
+        actions={canManageSensors ? (
           <Button onClick={() => setIsAddSensorDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Añadir Sensor
           </Button>
-        }
+        ) : undefined}
       />
 
       {/* View Mode Toggle */}
-      <Card className="border-gray-200">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Modo de Vista</h3>
-              <p className="text-sm text-muted-foreground">Selecciona cómo quieres visualizar los sensores</p>
+      {!isSimpleOperatorView && (
+        <Card className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Modo de Vista</h3>
+                <p className="text-sm text-muted-foreground">Selecciona cómo quieres visualizar los sensores</p>
+              </div>
+              <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+                <Button
+                  variant={viewMode === "hierarchical" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("hierarchical")}
+                  className="h-8 px-3 text-xs"
+                >
+                  <Factory className="h-3 w-3 mr-1" />
+                  Jerárquico
+                </Button>
+                <Button
+                  variant={viewMode === "simple" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("simple")}
+                  className="h-8 px-3 text-xs"
+                >
+                  <Eye className="h-3 w-3 mr-1" />
+                  Vista Simple
+                </Button>
+                <Button
+                  variant={viewMode === "advanced" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("advanced")}
+                  className="h-8 px-3 text-xs"
+                >
+                  <List className="h-3 w-3 mr-1" />
+                  Vista Avanzada
+                </Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-              <Button
-                variant={viewMode === "hierarchical" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("hierarchical")}
-                className="h-8 px-3 text-xs"
-              >
-                <Factory className="h-3 w-3 mr-1" />
-                Jerárquico
-              </Button>
-              <Button
-                variant={viewMode === "simple" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("simple")}
-                className="h-8 px-3 text-xs"
-              >
-                <Eye className="h-3 w-3 mr-1" />
-                Vista Simple
-              </Button>
-              <Button
-                variant={viewMode === "advanced" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setViewMode("advanced")}
-                className="h-8 px-3 text-xs"
-              >
-                <List className="h-3 w-3 mr-1" />
-                Vista Avanzada
-              </Button>
-            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!isMinimalSimpleLayout && (
+        <>
+          {/* Sensor Statistics */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-blue-600">{sensorStats.total}</div>
+                <div className="text-sm text-muted-foreground">Total</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-green-600">{sensorStats.active}</div>
+                <div className="text-sm text-muted-foreground">Activos</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-yellow-600">{sensorStats.alert}</div>
+                <div className="text-sm text-muted-foreground">En Alerta</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-red-600">{sensorStats.offline}</div>
+                <div className="text-sm text-muted-foreground">Desconectados</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="text-2xl font-bold text-orange-600">{sensorStats.maintenance}</div>
+                <div className="text-sm text-muted-foreground">Mantenimiento</div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Sensor Statistics */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-blue-600">{sensorStats.total}</div>
-            <div className="text-sm text-muted-foreground">Total</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-green-600">{sensorStats.active}</div>
-            <div className="text-sm text-muted-foreground">Activos</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-yellow-600">{sensorStats.alert}</div>
-            <div className="text-sm text-muted-foreground">En Alerta</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-red-600">{sensorStats.offline}</div>
-            <div className="text-sm text-muted-foreground">Desconectados</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-orange-600">{sensorStats.maintenance}</div>
-            <div className="text-sm text-muted-foreground">Mantenimiento</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Alert for sensors requiring attention */}
-      {(sensorStats.alert > 0 || sensorStats.offline > 0) && (
-        <Alert className="border-yellow-200 bg-yellow-50">
-          <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          <AlertDescription className="text-yellow-800">
-            <strong>Atención requerida:</strong> {sensorStats.alert} sensor(es) en alerta y {sensorStats.offline}{" "}
-            sensor(es) desconectado(s).
-          </AlertDescription>
-        </Alert>
+          {/* Alert for sensors requiring attention */}
+          {(sensorStats.alert > 0 || sensorStats.offline > 0) && (
+            <Alert className="border-yellow-200 bg-yellow-50">
+              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800">
+                <strong>Atención requerida:</strong> {sensorStats.alert} sensor(es) en alerta y {sensorStats.offline}{" "}
+                sensor(es) desconectado(s).
+              </AlertDescription>
+            </Alert>
+          )}
+        </>
       )}
 
       {/* Filters */}
@@ -1932,7 +1841,7 @@ export default function SensorsPage() {
       </Card>
 
       {/* Legend Section - Solo mostrar en vista avanzada */}
-      {viewMode === "advanced" && (
+      {effectiveViewMode === "advanced" && (
         <Card className="border-gray-200">
           <CardContent className="p-4">
             <h3 className="text-lg font-semibold mb-3">Leyenda del estado de los sensores:</h3>
@@ -1957,68 +1866,100 @@ export default function SensorsPage() {
         </Card>
       )}
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-3 sm:grid-cols-5 mb-4">
-          <TabsTrigger value="todos">
-            Todos
-            <Badge variant="secondary" className="ml-2">
-              {sensors.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="ph">
-            pH
-            <Badge variant="secondary" className="ml-2">
-              {sensors.filter((s) => s.type === "ph").length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="temperatura">
-            Temperatura
-            <Badge variant="secondary" className="ml-2">
-              {sensors.filter((s) => s.type === "temperature").length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="oxigeno">
-            Oxígeno
-            <Badge variant="secondary" className="ml-2">
-              {sensors.filter((s) => s.type === "oxygen").length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="otros">
-            Otros
-            <Badge variant="secondary" className="ml-2">
-              {sensors.filter((s) => !["ph", "temperature", "oxygen"].includes(s.type)).length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value={activeTab} className="mt-0">
-          <div className="space-y-6">
-            {Object.keys(organizedSensors).length > 0 ? (
-              <HierarchicalOrganization
-                organizedData={organizedSensors}
-                viewMode={viewMode}
-                onToggleStatus={toggleSensorStatus}
-                onEdit={handleEditSensor}
-                onDelete={handleDeleteClick}
-              />
-            ) : (
-              <div className="text-center py-12">
-                <p className="text-lg font-medium mb-2">No se encontraron sensores</p>
-                <p className="text-muted-foreground mb-6">
-                  {sensors.length === 0
-                    ? "No hay sensores registrados en el sistema. Comience agregando su primer sensor."
-                    : "No hay sensores que coincidan con los criterios de búsqueda actuales"}
-                </p>
+      {isMinimalSimpleLayout ? (
+        <div className="space-y-6">
+          {Object.keys(organizedSensors).length > 0 ? (
+            <HierarchicalOrganization
+              organizedData={organizedSensors}
+              viewMode={effectiveViewMode}
+              canManageSensors={canManageSensors}
+              onToggleStatus={toggleSensorStatus}
+              onEdit={handleEditSensor}
+              onDelete={handleDeleteClick}
+            />
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-lg font-medium mb-2">No se encontraron sensores</p>
+              <p className="text-muted-foreground mb-6">
+                {sensors.length === 0
+                  ? "No hay sensores registrados en el sistema. Comience agregando su primer sensor."
+                  : "No hay sensores que coincidan con los criterios de búsqueda actuales"}
+              </p>
+              {canManageSensors && (
                 <Button onClick={() => setIsAddSensorDialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Añadir Sensor
                 </Button>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid grid-cols-3 sm:grid-cols-5 mb-4">
+            <TabsTrigger value="todos">
+              Todos
+              <Badge variant="secondary" className="ml-2">
+                {sensors.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="ph">
+              pH
+              <Badge variant="secondary" className="ml-2">
+                {sensors.filter((s) => s.type === "ph").length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="temperatura">
+              Temperatura
+              <Badge variant="secondary" className="ml-2">
+                {sensors.filter((s) => s.type === "temperature").length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="oxigeno">
+              Oxígeno
+              <Badge variant="secondary" className="ml-2">
+                {sensors.filter((s) => s.type === "oxygen").length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="otros">
+              Otros
+              <Badge variant="secondary" className="ml-2">
+                {sensors.filter((s) => !["ph", "temperature", "oxygen"].includes(s.type)).length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab} className="mt-0">
+            <div className="space-y-6">
+              {Object.keys(organizedSensors).length > 0 ? (
+                <HierarchicalOrganization
+                  organizedData={organizedSensors}
+                  viewMode={effectiveViewMode}
+                  canManageSensors={canManageSensors}
+                  onToggleStatus={toggleSensorStatus}
+                  onEdit={handleEditSensor}
+                  onDelete={handleDeleteClick}
+                />
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-lg font-medium mb-2">No se encontraron sensores</p>
+                  <p className="text-muted-foreground mb-6">
+                    {sensors.length === 0
+                      ? "No hay sensores registrados en el sistema. Comience agregando su primer sensor."
+                      : "No hay sensores que coincidan con los criterios de búsqueda actuales"}
+                  </p>
+                  {canManageSensors && (
+                    <Button onClick={() => setIsAddSensorDialogOpen(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Añadir Sensor
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      )}
 
       {/* Add Sensor Dialog */}
       <AddSensorDialog

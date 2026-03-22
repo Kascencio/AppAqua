@@ -14,6 +14,7 @@ import type {
   Lectura
 } from "@/types"
 import { api } from "@/lib/api"
+import { canReadOrganizationDirectory, deriveDirectoryFromInstalaciones } from "@/lib/organization-directory"
 import { toast } from "@/hooks/use-toast"
 import { useAuth } from "@/context/auth-context"
 
@@ -276,6 +277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const role = user?.role
       const canManageUsers = role === "superadmin" || role === "admin"
+      const canReadOrgDirectory = canReadOrganizationDirectory(role)
 
       // Fetch all data in parallel
       const [
@@ -287,8 +289,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         alertasRes, 
         usuariosRes
       ] = await Promise.all([
-        api.get<any[]>('/organizaciones').catch(() => []),
-        api.get<any[]>('/sucursales').catch(() => []),
+        (canReadOrgDirectory ? api.get<any[]>('/organizaciones') : Promise.resolve([] as any[])).catch(() => []),
+        (canReadOrgDirectory ? api.get<any[]>('/sucursales') : Promise.resolve([] as any[])).catch(() => []),
         api.get<any[]>('/instalaciones').catch(() => []),
         api.get<any[]>('/catalogo-especies').catch(() => []),
         api.get<any[]>('/procesos').catch(() => []),
@@ -296,45 +298,56 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         (canManageUsers ? api.get<any[]>('/usuarios') : Promise.resolve([] as any[])).catch(() => [])
       ])
 
-      const mappedOrgs: EmpresaSucursalCompleta[] = orgsRes.map((org: any) => ({
-        id_empresa_sucursal: org.id_organizacion,
-        nombre: org.nombre,
-        tipo: "empresa",
-        estado_operativo: org.estado === "activa" ? "activa" : "inactiva",
-        fecha_registro: org.fecha_creacion,
-        id_estado: org.id_estado || 0,
-        id_cp: 0, // Placeholder
-        id_colonia: 0, // Placeholder
-        calle: org.direccion || "",
-        telefono: org.telefono,
-        email: org.correo,
-        latitud: org.latitud != null ? Number(org.latitud) : null,
-        longitud: org.longitud != null ? Number(org.longitud) : null,
-      }))
+      const derivedDirectory = canReadOrgDirectory
+        ? null
+        : deriveDirectoryFromInstalaciones(instalacionesRes)
+
+      const mappedOrgs: EmpresaSucursalCompleta[] = canReadOrgDirectory
+        ? orgsRes.map((org: any) => ({
+            id_empresa_sucursal: org.id_organizacion,
+            nombre: org.nombre,
+            tipo: "empresa",
+            estado_operativo: org.estado === "activa" ? "activa" : "inactiva",
+            fecha_registro: org.fecha_creacion,
+            id_estado: org.id_estado || 0,
+            id_cp: 0,
+            id_colonia: 0,
+            calle: org.direccion || "",
+            telefono: org.telefono,
+            email: org.correo,
+            latitud: org.latitud != null ? Number(org.latitud) : null,
+            longitud: org.longitud != null ? Number(org.longitud) : null,
+          }))
+        : (derivedDirectory?.organizaciones ?? [])
 
       const orgNameById = new Map<number, string>(
         mappedOrgs.map((org) => [Number(org.id_empresa_sucursal), String(org.nombre || "")]),
       )
 
-      const mappedSucursales: EmpresaSucursalCompleta[] = sucursalesRes.map((suc: any) => ({
-        id_empresa_sucursal: 10000 + suc.id_organizacion_sucursal, // Offset to avoid collision
-        id_padre: suc.id_organizacion,
-        nombre: suc.nombre_sucursal,
-        tipo: "sucursal",
-        estado_operativo: suc.estado === "activa" ? "activa" : "inactiva",
-        fecha_registro: suc.fecha_creacion,
-        id_estado: suc.id_estado || 0,
-        id_cp: suc.id_cp || 0,
-        id_colonia: suc.id_colonia || 0,
-        calle: suc.direccion_sucursal || suc.calle || "",
-        numero_int_ext: suc.numero_int_ext || null,
-        referencia: suc.referencia || null,
-        telefono: suc.telefono_sucursal,
-        email: suc.correo_sucursal,
-        latitud: suc.latitud != null ? Number(suc.latitud) : null,
-        longitud: suc.longitud != null ? Number(suc.longitud) : null,
-        padre: orgNameById.get(Number(suc.id_organizacion))
-      }))
+      const mappedSucursales: EmpresaSucursalCompleta[] = canReadOrgDirectory
+        ? sucursalesRes.map((suc: any) => ({
+            id_empresa_sucursal: 10000 + suc.id_organizacion_sucursal,
+            id_padre: suc.id_organizacion,
+            nombre: suc.nombre_sucursal,
+            tipo: "sucursal",
+            estado_operativo: suc.estado === "activa" ? "activa" : "inactiva",
+            fecha_registro: suc.fecha_creacion,
+            id_estado: suc.id_estado || 0,
+            id_cp: suc.id_cp || 0,
+            id_colonia: suc.id_colonia || 0,
+            calle: suc.direccion_sucursal || suc.calle || "",
+            numero_int_ext: suc.numero_int_ext || null,
+            referencia: suc.referencia || null,
+            telefono: suc.telefono_sucursal,
+            email: suc.correo_sucursal,
+            latitud: suc.latitud != null ? Number(suc.latitud) : null,
+            longitud: suc.longitud != null ? Number(suc.longitud) : null,
+            padre: orgNameById.get(Number(suc.id_organizacion)),
+          }))
+        : (derivedDirectory?.sucursales ?? []).map((suc) => ({
+            ...suc,
+            padre: suc.padre ?? orgNameById.get(Number(suc.id_padre)),
+          }))
 
       const mergedEmpresas = [...mappedOrgs, ...mappedSucursales]
       const empresaNombreById = new Map<number, string>(
@@ -361,7 +374,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         responsable_operativo: inst.responsable_operativo || null,
         contacto_emergencia: inst.contacto_emergencia || null,
         id_proceso: inst.id_proceso,
-        nombre_empresa: empresaNombreById.get(10000 + Number(inst.id_organizacion_sucursal || inst.id_empresa_sucursal || inst.id_sucursal || 0))
+        nombre_empresa:
+          inst.nombre_organizacion ||
+          empresaNombreById.get(Number(inst.id_organizacion || 0)) ||
+          inst.nombre_empresa ||
+          inst.sucursal_nombre ||
+          empresaNombreById.get(10000 + Number(inst.id_organizacion_sucursal || inst.id_empresa_sucursal || inst.id_sucursal || 0))
       }))
 
       const mappedEspecies: Especie[] = especiesRes.map((e: any) => ({
