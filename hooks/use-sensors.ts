@@ -107,6 +107,8 @@ function mapSensorsFast(sensores: any[], instalaciones: any[]): SensorCompleto[]
   return sensores.map((s) => {
     const inst = (s as any).instalacion
     const catalogo = (s as any).catalogo_sensores
+    const latestReading = Array.isArray((s as any).lectura) ? (s as any).lectura[0] : undefined
+    const latestReadingValue = Number((s as any).valor_actual ?? latestReading?.valor)
     const rawInstalacionId = s.id_instalacion ?? inst?.id_instalacion ?? null
     const instalacionId = rawInstalacionId == null ? 0 : Number(rawInstalacionId)
     const instalacionDetalle = instalacionById.get(instalacionId)
@@ -152,7 +154,8 @@ function mapSensorsFast(sensores: any[], instalaciones: any[]): SensorCompleto[]
           )
         : "Sin instalación",
       status,
-      lastReading: undefined,
+      currentParameter: rawType || undefined,
+      lastReading: Number.isFinite(latestReadingValue) ? latestReadingValue : undefined,
       lastUpdated: (s as any).ultima_lectura_at ? new Date((s as any).ultima_lectura_at) : undefined,
     }
   })

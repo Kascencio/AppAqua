@@ -13,6 +13,8 @@
  * 4. Distribuye eventos a todos los suscriptores
  */
 
+import { buildLecturasWsUrl } from "@/lib/websocket-url"
+
 type LecturaData = {
   id_lectura: number
   sensor_instalado_id: number
@@ -47,11 +49,7 @@ class WebSocketManager {
   private baseUrl: string
 
   constructor() {
-    const external = process.env.NEXT_PUBLIC_EXTERNAL_API_URL
-    const derived = external
-      ? external.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/lecturas'
-      : undefined
-    this.baseUrl = process.env.NEXT_PUBLIC_WS_URL || derived || 'ws://localhost:3100/ws/lecturas'
+    this.baseUrl = buildLecturasWsUrl()
     
     // Cleanup al cerrar la página
     if (typeof window !== 'undefined') {
@@ -79,7 +77,7 @@ class WebSocketManager {
   /**
    * Obtener o crear conexión WebSocket para una instalación
    */
-  private getOrCreateConnection(instalacionId: number): WebSocketConnection {
+  private getOrCreateConnection(instalacionId: number): WebSocketConnection | null {
     const key = this.getConnectionKey(instalacionId)
 
     if (this.connections.has(key)) {
@@ -112,8 +110,16 @@ class WebSocketManager {
 
     console.log(`[WS Manager] Creando conexión para instalación ${instalacionId}`)
 
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(wsUrl)
+    } catch (error) {
+      console.error(`[WS Manager] No se pudo abrir el WebSocket para instalación ${instalacionId}:`, error)
+      return null
+    }
+
     const connection: WebSocketConnection = {
-      socket: new WebSocket(wsUrl),
+      socket,
       instalacionId,
       reconnectAttempts: 0,
       maxReconnectAttempts: 5,

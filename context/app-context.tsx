@@ -15,6 +15,7 @@ import type {
 } from "@/types"
 import { api } from "@/lib/api"
 import { canReadOrganizationDirectory, deriveDirectoryFromInstalaciones } from "@/lib/organization-directory"
+import { buildNotificationsWsUrl } from "@/lib/websocket-url"
 import { toast } from "@/hooks/use-toast"
 import { useAuth } from "@/context/auth-context"
 
@@ -49,27 +50,6 @@ const APP_CONTEXT_CACHE_TTL_MS = 60_000
 const APP_CONTEXT_MIN_REFETCH_INTERVAL_MS = 20_000
 const ALERTS_WS_RECONNECT_MS = 3_000
 const ALERTS_WS_TOAST_DEDUP_MS = 8_000
-
-function buildNotificationsWsUrl(): string | null {
-  const explicit = process.env.NEXT_PUBLIC_WS_NOTIFICATIONS_URL
-  if (explicit) return explicit
-
-  const wsLecturas = process.env.NEXT_PUBLIC_WS_URL
-  if (wsLecturas) {
-    return wsLecturas.replace("/ws/lecturas", "/ws/notificaciones")
-  }
-
-  const externalApi = process.env.NEXT_PUBLIC_EXTERNAL_API_URL
-  if (externalApi) {
-    const wsBase = externalApi
-      .replace("https://", "wss://")
-      .replace("http://", "ws://")
-      .replace(/\/$/, "")
-    return `${wsBase}/ws/notificaciones`
-  }
-
-  return null
-}
 
 function mapAlertaFromApi(raw: any): Alerta | null {
   const id = Number(raw?.id_alertas ?? raw?.id_alerta ?? raw?.id)
