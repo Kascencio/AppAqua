@@ -32,7 +32,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   // Mostrar loading mientras se verifica la autenticación
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-blue-50 to-indigo-100 dark:from-blue-950 dark:via-cyan-950 dark:to-indigo-950">
+      <div className="min-h-dvh flex items-center justify-center bg-gradient-to-br from-cyan-50 via-blue-50 to-indigo-100 dark:from-blue-950 dark:via-cyan-950 dark:to-indigo-950">
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
           <p className="text-blue-600 dark:text-blue-300">Cargando AquaMonitor...</p>
@@ -48,7 +48,7 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
 
   if (isSimpleOperatorView && !isOperatorAllowedPath) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-blue-50 to-indigo-100 dark:from-blue-950 dark:via-cyan-950 dark:to-indigo-950">
+      <div className="min-h-dvh flex items-center justify-center bg-gradient-to-br from-cyan-50 via-blue-50 to-indigo-100 dark:from-blue-950 dark:via-cyan-950 dark:to-indigo-950">
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
           <p className="text-blue-600 dark:text-blue-300">Redirigiendo a la vista operativa...</p>
@@ -60,14 +60,14 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   // Si está autenticado, mostrar el layout completo con sidebar
   if (isAuthenticated && pathname !== "/login") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-cyan-50/50 via-blue-50/30 to-indigo-100/50 dark:from-blue-950/50 dark:via-cyan-950/30 dark:to-indigo-950/50">
-        <div className="flex h-screen overflow-hidden">
+      <div className="min-h-dvh bg-gradient-to-br from-cyan-50/50 via-blue-50/30 to-indigo-100/50 dark:from-blue-950/50 dark:via-cyan-950/30 dark:to-indigo-950/50">
+        <div className="flex min-h-dvh overflow-hidden">
           <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <header className="flex items-center justify-end p-4 border-b border-cyan-100/50 dark:border-cyan-800/30 bg-white/30 dark:bg-blue-950/30 backdrop-blur-sm">
+          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+            <header className="flex items-center justify-end p-4 pl-16 md:pl-4 border-b border-cyan-100/50 dark:border-cyan-800/30 bg-white/30 dark:bg-blue-950/30 backdrop-blur-sm">
               <ModeToggle />
             </header>
-            <main className="flex-1 overflow-auto">{children}</main>
+            <main className="flex-1 min-w-0 overflow-auto">{children}</main>
           </div>
         </div>
       </div>

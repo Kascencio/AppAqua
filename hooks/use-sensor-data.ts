@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { backendApi, type Lectura as BackendLectura, type SensorInstalado as BackendSensorInstalado, type Promedio as BackendPromedio } from "@/lib/backend-client"
 
 interface SensorDataPoint {
@@ -205,6 +205,8 @@ export function useSensorParameterData(facilityId: string, parameter: string, da
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
     if (!facilityId || !parameter || !dateRange.from || !dateRange.to) {
       setChartData([])
       setLoading(false)
@@ -222,45 +224,19 @@ export function useSensorParameterData(facilityId: string, parameter: string, da
 
         const bucketMinutes = computeBucketMinutes(dateRange.from, dateRange.to, 200)
 
-        const promediosArrays = await Promise.all(
-          sensoresFiltrados.map(async (s) => {
-            try {
-              const resp = await backendApi.getPromedios({
-                sensorInstaladoId: s.id_sensor_instalado,
-                bucketMinutes,
-                desde: dateRange.from.toISOString(),
-                hasta: dateRange.to.toISOString(),
-              }).catch(() => backendApi.getPromedios({ sensorInstaladoId: s.id_sensor_instalado, bucketMinutes }))
-              return (resp as any[]).map((p) => ({ p, s }))
-            } catch {
-              const resp = await backendApi.getLecturas({
-                sensorInstaladoId: s.id_sensor_instalado,
-                page: 1,
-                limit: 5000,
-                desde: dateRange.from.toISOString(),
-                hasta: dateRange.to.toISOString(),
-              })
-              return normalizeListPayload<BackendLectura>(resp as any).map((l) => ({ l, s }))
-            }
-          }),
-        )
+        const sensorIds = sensoresFiltrados.map((s) => Number(s.id_sensor_instalado)).filter((id) => Number.isFinite(id) && id > 0)
+        const batch = sensorIds.length > 0
+          ? await backendApi.getPromediosBatch({
+              sensorInstaladoIds: sensorIds,
+              bucketMinutes,
+              desde: dateRange.from.toISOString(),
+              hasta: dateRange.to.toISOString(),
+            })
+          : { sensores: [] }
 
-        const mapped: SensorDataPoint[] = promediosArrays
-          .flat()
-          .map((item: any) => {
-            if (item.p) {
-              const point = promedioToPoint(item.p as BackendPromedio)
-              return point ? { ...point, status: "normal" } : null
-            }
-            if (item.l) {
-              return {
-                timestamp: lecturaToDate(item.l as BackendLectura).toISOString(),
-                value: Number((item.l as any).valor ?? 0),
-                status: "normal",
-              }
-            }
-            return null
-          })
+        const mapped: SensorDataPoint[] = (batch as any).sensores
+          .flatMap((sensor: any) => Array.isArray(sensor.puntos) ? sensor.puntos : [])
+          .map((p: BackendPromedio) => promedioToPoint(p))
           .filter(Boolean) as SensorDataPoint[]
 
         const filtered = mapped.filter((d) => {
@@ -268,14 +244,20 @@ export function useSensorParameterData(facilityId: string, parameter: string, da
           return t >= dateRange.from.getTime() && t <= dateRange.to.getTime()
         })
 
+        if (cancelled) return
         setChartData(filtered)
       } catch {
+        if (cancelled) return
         setError("Error al obtener datos del parámetro")
         setChartData([])
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     })()
+
+    return () => {
+      cancelled = true
+    }
   }, [facilityId, parameter, dateRange.from, dateRange.to])
 
   return { chartData, loading, error }
@@ -288,12 +270,14 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const { from, to, parameters, refreshInterval = 30000, sensorId } = options
+  const requestSeqRef = useRef(0)
 
   const fetchData = useCallback(async () => {
     if (!facilityId) {
       // No hacer nada si no hay facilityId
       return
     }
+    const requestId = ++requestSeqRef.current
     setLoading(true)
     setError(null)
     try {
@@ -306,32 +290,22 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
       const toDate = to || new Date()
       const bucketMinutes = computeBucketMinutes(fromDate, toDate, 200)
 
-      const dataArrays = await Promise.all(
-        sensores.map(async (s) => {
-          try {
-            const resp = await backendApi
-              .getPromedios({
-                sensorInstaladoId: s.id_sensor_instalado,
-                bucketMinutes,
-                desde: fromDate.toISOString(),
-                hasta: toDate.toISOString(),
-              })
-              .catch(() => backendApi.getPromedios({ sensorInstaladoId: s.id_sensor_instalado, bucketMinutes }))
-            return (resp as any[]).map((p) => ({ p, s }))
-          } catch {
-            const resp = await backendApi.getLecturas({
-              sensorInstaladoId: s.id_sensor_instalado,
-              page: 1,
-              limit: 5000,
-              desde: fromDate.toISOString(),
-              hasta: toDate.toISOString(),
-            })
-            return normalizeListPayload<BackendLectura>(resp as any).map((l) => ({ l, s }))
-          }
-        }),
-      )
+      const sensorIds = sensores.map((s) => Number(s.id_sensor_instalado)).filter((id) => Number.isFinite(id) && id > 0)
+      const sensorById = new Map(sensores.map((s) => [Number(s.id_sensor_instalado), s]))
+      const batch = sensorIds.length > 0
+        ? await backendApi.getPromediosBatch({
+            sensorInstaladoIds: sensorIds,
+            bucketMinutes,
+            desde: fromDate.toISOString(),
+            hasta: toDate.toISOString(),
+          })
+        : { sensores: [] }
 
-      const flattened = dataArrays.flat()
+      const flattened = (batch as any).sensores.flatMap((sensor: any) => {
+        const s = sensorById.get(Number(sensor.id_sensor_instalado))
+        if (!s) return []
+        return (Array.isArray(sensor.puntos) ? sensor.puntos : []).map((p: BackendPromedio) => ({ p, s }))
+      })
 
       const mapped: SensorReading[] = flattened
         .map((item: any): SensorReading | null => {
@@ -352,26 +326,10 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
               location: (s as any).ubicacion || undefined,
             }
           }
-          if (item.l) {
-            const l = item.l as BackendLectura
-            const sid = Number((l as any).id_sensor_instalado ?? (l as any).sensor_instalado_id ?? s.id_sensor_instalado)
-            const parameterKey = normalizeParameterKey((l as any).tipo_medida || (s as any).tipo_medida || "")
-            const timestamp = lecturaToDate(l)
-            return {
-              id: String((l as any).id_lectura ?? `${sid}-${timestamp.toISOString()}`),
-              sensorId: String(sid),
-              parameter: parameterKey,
-              value: Number((l as any).valor ?? 0),
-              unit: String((s as any).unidad_medida || ""),
-              timestamp,
-              isOutOfRange: false,
-              location: (s as any).ubicacion || undefined,
-            }
-          }
           return null
         })
-        .filter((r): r is SensorReading => r !== null)
-        .filter((r) => {
+        .filter((r: SensorReading | null): r is SensorReading => r !== null)
+        .filter((r: SensorReading) => {
           const timestamp = r.timestamp.getTime()
           if (timestamp < fromDate.getTime() || timestamp > toDate.getTime()) return false
           if (sensorId && r.sensorId !== String(sensorId)) return false
@@ -379,12 +337,18 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
           return true
         })
 
-      setReadings((prev) => (areReadingsEquivalent(prev, mapped) ? prev : mapped))
+      if (requestId === requestSeqRef.current) {
+        setReadings((prev) => (areReadingsEquivalent(prev, mapped) ? prev : mapped))
+      }
     } catch {
-      setError("Error al obtener datos de sensores")
+      if (requestId === requestSeqRef.current) {
+        setError("Error al obtener datos de sensores")
+      }
     } finally {
-      setLoading(false)
-      setLastUpdated(new Date())
+      if (requestId === requestSeqRef.current) {
+        setLoading(false)
+        setLastUpdated(new Date())
+      }
     }
   }, [facilityId, from, to, parameters, sensorId])
 
@@ -396,8 +360,19 @@ export function useSensorDataMultiple(facilityId: string | null, options: UseSen
 
   useEffect(() => {
     if (!facilityId || !refreshInterval || refreshInterval <= 0) return
-    const interval = setInterval(fetchData, refreshInterval)
-    return () => clearInterval(interval)
+    const fetchIfVisible = () => {
+      if (typeof document !== "undefined" && document.hidden) return
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return
+      fetchData()
+    }
+    const interval = setInterval(fetchIfVisible, refreshInterval)
+    document.addEventListener("visibilitychange", fetchIfVisible)
+    window.addEventListener("online", fetchIfVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener("visibilitychange", fetchIfVisible)
+      window.removeEventListener("online", fetchIfVisible)
+    }
   }, [fetchData, refreshInterval, facilityId])
 
   const chartData = useMemo(() => {

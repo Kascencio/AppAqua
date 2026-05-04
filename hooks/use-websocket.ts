@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { wsManager, type LecturaData } from "@/lib/websocket-manager"
 
 export interface WebSocketMessage {
@@ -53,6 +53,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [isConnected, setIsConnected] = useState(false)
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const callbacksRef = useRef({ onMessage, onError, onConnect, onDisconnect })
+
+  useEffect(() => {
+    callbacksRef.current = { onMessage, onError, onConnect, onDisconnect }
+  }, [onMessage, onError, onConnect, onDisconnect])
 
   useEffect(() => {
     // Validar que tengamos instalacionId
@@ -60,9 +65,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       if (!instalacionId && enabled) {
         const errorMsg = "useWebSocket requiere instalacionId para funcionar correctamente"
         setError(errorMsg)
-        onError?.(errorMsg)
-        console.warn("[useWebSocket]", errorMsg)
+        callbacksRef.current.onError?.(errorMsg)
       }
+      setIsConnected(false)
       return
     }
 
@@ -70,13 +75,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (isNaN(instId)) {
       const errorMsg = `instalacionId inválido: ${instalacionId}`
       setError(errorMsg)
-      onError?.(errorMsg)
+      callbacksRef.current.onError?.(errorMsg)
+      setIsConnected(false)
       return
     }
 
-    setIsConnected(true)
     setError(null)
-    onConnect?.()
+    setIsConnected(false)
 
     // Suscribirse al WebSocketManager
     const unsubscribe = wsManager.subscribe(instId, (data: LecturaData) => {
@@ -97,16 +102,39 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       setLastMessage(mappedMessage)
-      onMessage?.(mappedMessage)
+      callbacksRef.current.onMessage?.(mappedMessage)
+    }, (status) => {
+      if (status === 'open') {
+        setIsConnected(true)
+        setError(null)
+        callbacksRef.current.onConnect?.()
+        return
+      }
+
+      if (status === 'connecting') {
+        setIsConnected(false)
+        setError(null)
+        return
+      }
+
+      if (status === 'error') {
+        const errorMsg = 'Error en la conexión WebSocket'
+        setIsConnected(false)
+        setError(errorMsg)
+        callbacksRef.current.onError?.(errorMsg)
+        return
+      }
+
+      setIsConnected(false)
+      callbacksRef.current.onDisconnect?.()
     })
 
     // Cleanup al desmontar
     return () => {
       unsubscribe()
       setIsConnected(false)
-      onDisconnect?.()
     }
-  }, [enabled, instalacionId, sensorId, onMessage, onError, onConnect, onDisconnect])
+  }, [enabled, instalacionId, sensorId])
 
   return {
     isConnected,
@@ -114,4 +142,3 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     error,
   }
 }
-

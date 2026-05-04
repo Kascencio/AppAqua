@@ -1,16 +1,54 @@
+# Git
 .git
 .gitignore
-.next
-.pnpm-store
+
+# Dependencies (rebuilt in Docker)
 node_modules
-analysis
-docs
-fixes
-scripts
-*.md
-.DS_Store
+
+# Build output (rebuilt in Docker)
+.next
+out
+build
+
+# pnpm store
+.pnpm-store
+
+# Environment
 .env
 .env.*
+!.env.example
+
+# Documentation / analysis (not needed in image)
+*.md
+analysis
+fixes
+docs
+
+# Scripts (local dev tools only)
+scripts
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SQL dumps
+*.sql
+
+# TypeScript build cache
+tsconfig.tsbuildinfo
+
+# Debug
 npm-debug.log*
 pnpm-debug.log*
-tsconfig.tsbuildinfo
+
+# Docker files
+docker-compose*.yml
+Dockerfile
+
+# Local dev file
+local
+proxy.ts

@@ -8,9 +8,9 @@
 // En navegador y servidor de Next: usar route handlers locales en /api/*.
 // Si se ejecuta en scripts Node fuera de Next, el baseUrl puede apuntar directo al backend externo.
 const EXTERNAL_BACKEND_URL =
-  process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
   process.env.EXTERNAL_API_URL ||
-  'http://195.35.11.179:3100'
+  process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
+  'http://localhost:3100'
 
 const IS_SERVER = typeof window === 'undefined'
 const API_BASE_URL = IS_SERVER ? EXTERNAL_BACKEND_URL : ''
@@ -305,6 +305,8 @@ class HttpClient {
   private inflightRequests = new Map<string, Promise<unknown>>()
   private readonly DEFAULT_CACHE_TTL_MS = 15_000
   private readonly SHORT_CACHE_TTL_MS = 5_000
+  private readonly MAX_CACHE_ENTRIES = 150
+  private lastUnauthorizedDispatch = 0
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl
@@ -318,11 +320,10 @@ class HttpClient {
   }
 
   private getToken(): string | null {
+    // Con cookies httpOnly, el token se envía automáticamente.
+    // Este método queda como fallback para scripts Node fuera de Next.
     if (typeof window === 'undefined') return null
-    const lsToken = window.localStorage?.getItem('token')
-    if (lsToken) return lsToken
-    const match = document.cookie.match(/(?:^|; )access_token=([^;]*)/)
-    return match ? decodeURIComponent(match[1]) : null
+    return null
   }
 
   private buildCacheKey(method: string, endpoint: string): string {
@@ -339,6 +340,31 @@ class HttpClient {
       return this.SHORT_CACHE_TTL_MS
     }
     return this.DEFAULT_CACHE_TTL_MS
+  }
+
+  private pruneCache() {
+    const now = Date.now()
+    for (const [key, entry] of this.responseCache.entries()) {
+      if (entry.expiresAt <= now) this.responseCache.delete(key)
+    }
+
+    while (this.responseCache.size >= this.MAX_CACHE_ENTRIES) {
+      const oldestKey = this.responseCache.keys().next().value
+      if (!oldestKey) break
+      this.responseCache.delete(oldestKey)
+    }
+  }
+
+  private handleUnauthorized() {
+    if (typeof window === 'undefined') return
+
+    localStorage.removeItem('user_data')
+
+    const now = Date.now()
+    if (now - this.lastUnauthorizedDispatch > 1000) {
+      window.dispatchEvent(new Event('aqua:auth-unauthorized'))
+      this.lastUnauthorizedDispatch = now
+    }
   }
 
   invalidateCache() {
@@ -379,6 +405,7 @@ class HttpClient {
 
     const response = await fetch(url, {
       ...options,
+      credentials: 'include',
       headers: {
         ...mergedHeaders,
       },
@@ -386,6 +413,9 @@ class HttpClient {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
+      if (response.status === 401) {
+        this.handleUnauthorized()
+      }
       throw new BackendApiError(
         errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`,
         response.status,
@@ -393,7 +423,16 @@ class HttpClient {
       )
     }
 
-    return await response.json()
+    if (response.status === 204) {
+      return {} as T
+    }
+
+    const rawBody = await response.text()
+    if (!rawBody.trim()) {
+      return {} as T
+    }
+
+    return JSON.parse(rawBody) as T
   }
 
   private async request<T>(
@@ -405,6 +444,7 @@ class HttpClient {
 
     try {
       if (method === 'GET') {
+        this.pruneCache()
         const cached = this.responseCache.get(cacheKey)
         if (cached && cached.expiresAt > Date.now()) {
           return this.cloneData(cached.data as T)
@@ -867,12 +907,20 @@ export class BackendApiClient {
     }
   }
 
+  async getMe() {
+    return this.http.get<{ usuario: Usuario } | ApiResponse<Usuario>>(`${API_PREFIX}/auth/me`)
+  }
+
   async register(data: { nombre: string; email: string; password: string; rol?: string }) {
     return this.http.post<ApiResponse<{ token: string; usuario: Usuario }>>(`${API_PREFIX}/auth/register`, data)
   }
 
   async refreshToken(token: string) {
     return this.http.post<ApiResponse<{ token: string }>>(`${API_PREFIX}/auth/refresh`, { token })
+  }
+
+  async logout() {
+    return this.http.post<{ success: boolean; message: string }>(`${API_PREFIX}/auth/logout`, {})
   }
 }
 

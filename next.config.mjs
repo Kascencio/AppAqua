@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 
 /** @type {import('next').NextConfig} */
 function normalizeExternalBackendUrl(rawUrl) {
-  const fallback = "http://195.35.11.179:3100"
+  const fallback = "http://localhost:3100"
   const raw = (rawUrl || fallback).trim().replace(/^['"]|['"]$/g, "")
   if (!raw) return fallback
   if (/^\d+$/.test(raw)) return `http://127.0.0.1:${raw}`
@@ -12,7 +12,7 @@ function normalizeExternalBackendUrl(rawUrl) {
 }
 
 const EXTERNAL_BACKEND_URL = normalizeExternalBackendUrl(
-  process.env.NEXT_PUBLIC_EXTERNAL_API_URL || process.env.EXTERNAL_API_URL
+  process.env.EXTERNAL_API_URL || process.env.NEXT_PUBLIC_EXTERNAL_API_URL
 )
 const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 

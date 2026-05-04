@@ -77,6 +77,10 @@ export default function UsersPage() {
     return null
   }
 
+  return <UsersPageContent currentUser={currentUser} />
+}
+
+function UsersPageContent({ currentUser }: { currentUser: any }) {
   const { users, loading, loadUsers, createUser, updateUser, deleteUser, sendPasswordReset, changeUserPassword } = useUsers()
   const { toast } = useToast()
 
@@ -1024,7 +1028,7 @@ export default function UsersPage() {
             <div className="grid gap-4 py-4">
               {/* Información básica */}
               <div className="grid gap-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="name" className="flex items-center gap-1">
                       Nombre completo <span className="text-red-500">*</span>
@@ -1063,7 +1067,7 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="phone">Teléfono</Label>
                     <Input
@@ -1092,7 +1096,7 @@ export default function UsersPage() {
                 </div>
 
                 {currentUser?.role === "superadmin" && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <Label htmlFor="password">Contraseña (opcional)</Label>
                       <div className="relative">
@@ -1151,7 +1155,7 @@ export default function UsersPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="role">
                       Rol <span className="text-red-500">*</span>
@@ -1354,7 +1358,7 @@ export default function UsersPage() {
             <div className="grid gap-4 py-4">
               {/* Información básica */}
               <div className="grid gap-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="edit-name" className="flex items-center gap-1">
                       Nombre completo <span className="text-red-500">*</span>
@@ -1391,7 +1395,7 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="edit-phone">Teléfono</Label>
                     <Input
@@ -1419,7 +1423,7 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="edit-role">
                       Rol <span className="text-red-500">*</span>

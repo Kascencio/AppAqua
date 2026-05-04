@@ -264,10 +264,21 @@ export function useSensors() {
 
   useEffect(() => {
     fetchSensors()
-    const id = setInterval(() => {
+    const refreshIfVisible = () => {
+      if (typeof document !== "undefined" && document.hidden) return
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return
       fetchSensors()
+    }
+    const id = setInterval(() => {
+      refreshIfVisible()
     }, SENSORS_REFRESH_INTERVAL_MS)
-    return () => clearInterval(id)
+    document.addEventListener("visibilitychange", refreshIfVisible)
+    window.addEventListener("online", refreshIfVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", refreshIfVisible)
+      window.removeEventListener("online", refreshIfVisible)
+    }
   }, [fetchSensors])
 
   const createSensor = useCallback(

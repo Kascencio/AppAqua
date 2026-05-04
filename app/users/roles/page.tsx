@@ -44,6 +44,15 @@ interface PermissionGroup {
   }[]
 }
 
+function getAccessToken(): string | null {
+  const cookieToken = document.cookie
+    .split(';')
+    .find(c => c.trim().startsWith('access_token='))
+    ?.split('=')[1]
+
+  return cookieToken ? decodeURIComponent(cookieToken) : localStorage.getItem('token')
+}
+
 const PERMISSION_GROUPS: PermissionGroup[] = [
   {
     category: "users",
@@ -154,14 +163,11 @@ export default function RolesPage() {
     try {
       setLoading(true)
       setError(null)
-      const token = document.cookie
-        .split(';')
-        .find(c => c.trim().startsWith('access_token='))
-        ?.split('=')[1] || localStorage.getItem('access_token')
+      const token = getAccessToken()
 
       const response = await fetch('/api/roles', {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       })
 
@@ -230,10 +236,7 @@ export default function RolesPage() {
     }
 
     try {
-      const token = document.cookie
-        .split(';')
-        .find(c => c.trim().startsWith('access_token='))
-        ?.split('=')[1] || localStorage.getItem('access_token')
+      const token = getAccessToken()
 
       if (selectedRole) {
         // Editar rol
@@ -241,7 +244,7 @@ export default function RolesPage() {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ nombre: roleName }),
         })
@@ -262,7 +265,7 @@ export default function RolesPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ nombre: roleName }),
         })
@@ -293,15 +296,12 @@ export default function RolesPage() {
     if (!selectedRole) return
 
     try {
-      const token = document.cookie
-        .split(';')
-        .find(c => c.trim().startsWith('access_token='))
-        ?.split('=')[1] || localStorage.getItem('access_token')
+      const token = getAccessToken()
 
       const response = await fetch(`/api/roles/${selectedRole.id_rol}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
       })
 
@@ -545,4 +545,3 @@ export default function RolesPage() {
     </div>
   )
 }
-

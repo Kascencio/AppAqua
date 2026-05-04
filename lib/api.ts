@@ -58,34 +58,16 @@ class ApiClient {
     this.inflightRequests.clear()
   }
 
-  private getTokenFromCookie(): string | null {
-    if (typeof document === "undefined") return null
-
-    const cookies = document.cookie.split(";").map((c) => c.trim())
-    const tokenCookie = cookies.find((c) => c.startsWith("access_token="))
-    if (!tokenCookie) return null
-
-    const [, value] = tokenCookie.split("=")
-    return value ? decodeURIComponent(value) : null
-  }
-
   private getHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {}
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("token") || this.getTokenFromCookie()
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`
-      }
-    }
-    return headers
+    // Con cookies httpOnly, el navegador envía el token automáticamente.
+    // No necesitamos setear Authorization manualmente.
+    return {}
   }
 
   private handleUnauthorized() {
     if (typeof window === "undefined") return
 
-    localStorage.removeItem("token")
     localStorage.removeItem("user_data")
-    document.cookie = "access_token=; Path=/; Max-Age=0; SameSite=Lax"
 
     const now = Date.now()
     if (now - this.lastUnauthorizedDispatch > 1000) {

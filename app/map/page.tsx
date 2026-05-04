@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import dynamic from "next/dynamic"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { MapComponent } from "@/components/map-component"
 import { useAppContext } from "@/context/app-context"
 import type { EmpresaSucursalCompleta } from "@/types"
 import type { Branch } from "@/types/branch"
@@ -28,6 +28,11 @@ import {
   Factory,
   GitBranch,
 } from "lucide-react"
+
+const MapComponent = dynamic(() => import("@/components/map-component").then((mod) => mod.MapComponent), {
+  ssr: false,
+  loading: () => <Skeleton className="h-[520px] w-full rounded-xl" />,
+})
 
 export default function MapPage() {
   const [searchTerm, setSearchTerm] = useState("")

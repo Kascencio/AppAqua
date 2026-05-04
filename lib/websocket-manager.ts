@@ -31,6 +31,8 @@ type WebSocketMessage = {
 }
 
 type SubscriberCallback = (data: LecturaData) => void
+type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'error'
+type ConnectionStatusCallback = (status: ConnectionStatus, event?: Event | CloseEvent) => void
 
 interface WebSocketConnection {
   socket: WebSocket
@@ -45,8 +47,11 @@ interface WebSocketConnection {
 class WebSocketManager {
   private connections: Map<string, WebSocketConnection> = new Map()
   private subscribers: Map<string, Set<SubscriberCallback>> = new Map()
+  private statusSubscribers: Map<string, Set<ConnectionStatusCallback>> = new Map()
+  private reconnectAttempts: Map<string, number> = new Map()
   private pendingCloseTimeouts: Map<string, NodeJS.Timeout> = new Map()
   private baseUrl: string
+  private debug = process.env.NEXT_PUBLIC_WS_DEBUG === 'true'
 
   constructor() {
     this.baseUrl = buildLecturasWsUrl()
@@ -64,6 +69,27 @@ class WebSocketManager {
    */
   private getConnectionKey(instalacionId: number): string {
     return `instalacion-${instalacionId}`
+  }
+
+  private log(message: string, ...args: unknown[]) {
+    if (this.debug) console.log(message, ...args)
+  }
+
+  private warn(message: string, ...args: unknown[]) {
+    if (this.debug) console.warn(message, ...args)
+  }
+
+  private notifyStatus(key: string, status: ConnectionStatus, event?: Event | CloseEvent) {
+    const subscribers = this.statusSubscribers.get(key)
+    if (!subscribers || subscribers.size === 0) return
+
+    subscribers.forEach((callback) => {
+      try {
+        callback(status, event)
+      } catch (error) {
+        this.warn('[WS Manager] Error en callback de estado:', error)
+      }
+    })
   }
 
   private cancelPendingClose(key: string) {
@@ -108,20 +134,22 @@ class WebSocketManager {
       wsUrl += `&token=${encodeURIComponent(token)}`
     }
 
-    console.log(`[WS Manager] Creando conexión para instalación ${instalacionId}`)
+    this.notifyStatus(key, 'connecting')
+    this.log(`[WS Manager] Creando conexión para instalación ${instalacionId}`)
 
     let socket: WebSocket
     try {
       socket = new WebSocket(wsUrl)
     } catch (error) {
-      console.error(`[WS Manager] No se pudo abrir el WebSocket para instalación ${instalacionId}:`, error)
+      this.notifyStatus(key, 'error', error instanceof Event ? error : undefined)
+      this.warn(`[WS Manager] No se pudo abrir el WebSocket para instalación ${instalacionId}:`, error)
       return null
     }
 
     const connection: WebSocketConnection = {
       socket,
       instalacionId,
-      reconnectAttempts: 0,
+      reconnectAttempts: this.reconnectAttempts.get(key) ?? 0,
       maxReconnectAttempts: 5,
       reconnectDelay: 3000,
       isConnecting: true
@@ -140,9 +168,11 @@ class WebSocketManager {
     const { socket, instalacionId } = connection
 
     socket.onopen = () => {
-      console.log(`[WS Manager] ✅ Conectado a instalación ${instalacionId}`)
+      this.log(`[WS Manager] Conectado a instalación ${instalacionId}`)
       connection.reconnectAttempts = 0
+      this.reconnectAttempts.set(key, 0)
       connection.isConnecting = false
+      this.notifyStatus(key, 'open')
       
       // Limpiar timeout de reconexión si existe
       if (connection.reconnectTimeout) {
@@ -157,7 +187,7 @@ class WebSocketManager {
 
         // Manejar evento de lectura creada
         if (message.type === 'lectura.created' && message.data) {
-          console.log(`[WS Manager] 📊 Lectura recibida - Sensor: ${message.data.sensor_instalado_id}, Valor: ${message.data.valor}`)
+          this.log(`[WS Manager] Lectura recibida - Sensor: ${message.data.sensor_instalado_id}, Valor: ${message.data.valor}`)
           
           // Notificar a todos los suscriptores de esta instalación
           const subscribers = this.subscribers.get(key)
@@ -166,51 +196,57 @@ class WebSocketManager {
               try {
                 callback(message.data!)
               } catch (error) {
-                console.error('[WS Manager] Error en callback de suscriptor:', error)
+                this.warn('[WS Manager] Error en callback de suscriptor:', error)
               }
             })
           }
         } else if (message.type === 'error') {
-          console.error(`[WS Manager] ❌ Error del servidor:`, message.message)
+          this.warn(`[WS Manager] Error del servidor:`, message.message)
         } else if (message.type === 'connected') {
-          console.log(`[WS Manager] 🔗 Conexión establecida:`, message.message)
+          this.log(`[WS Manager] Conexión establecida:`, message.message)
         }
       } catch (error) {
-        console.error('[WS Manager] Error parseando mensaje:', error)
+        this.warn('[WS Manager] Error parseando mensaje:', error)
       }
     }
 
     socket.onerror = (error) => {
-      console.error(`[WS Manager] ❌ Error en conexión de instalación ${instalacionId}:`, error)
+      this.notifyStatus(key, 'error', error)
+      this.warn(`[WS Manager] Error en conexión de instalación ${instalacionId}:`, error)
       connection.isConnecting = false
     }
 
     socket.onclose = (event) => {
-      console.log(`[WS Manager] 🔌 Desconectado de instalación ${instalacionId} (code: ${event.code})`)
+      this.log(`[WS Manager] Desconectado de instalación ${instalacionId} (code: ${event.code})`)
       connection.isConnecting = false
+      this.notifyStatus(key, 'closed', event)
       
       // Limpiar conexión del pool
       this.connections.delete(key)
 
       // Intentar reconectar si no excedemos el límite y hay suscriptores
       const subscribers = this.subscribers.get(key)
+      const attempts = this.reconnectAttempts.get(key) ?? connection.reconnectAttempts
       if (
-        connection.reconnectAttempts < connection.maxReconnectAttempts &&
+        attempts < connection.maxReconnectAttempts &&
         subscribers &&
         subscribers.size > 0
       ) {
         // Calcular delay con backoff exponencial
-        const delay = connection.reconnectDelay * Math.pow(2, connection.reconnectAttempts)
-        connection.reconnectAttempts++
+        const delay = connection.reconnectDelay * Math.pow(2, attempts)
+        const nextAttempts = attempts + 1
+        connection.reconnectAttempts = nextAttempts
+        this.reconnectAttempts.set(key, nextAttempts)
 
-        console.log(`[WS Manager] 🔄 Reconectando en ${delay}ms... (intento ${connection.reconnectAttempts}/${connection.maxReconnectAttempts})`)
+        this.log(`[WS Manager] Reconectando en ${delay}ms... (intento ${nextAttempts}/${connection.maxReconnectAttempts})`)
 
         connection.reconnectTimeout = setTimeout(() => {
-          console.log(`[WS Manager] 🔄 Intentando reconectar instalación ${instalacionId}...`)
+          this.notifyStatus(key, 'connecting')
+          this.log(`[WS Manager] Intentando reconectar instalación ${instalacionId}...`)
           this.getOrCreateConnection(instalacionId)
         }, delay)
-      } else if (connection.reconnectAttempts >= connection.maxReconnectAttempts) {
-        console.error(`[WS Manager] ⛔ Máximo de reintentos alcanzado para instalación ${instalacionId}`)
+      } else if (attempts >= connection.maxReconnectAttempts) {
+        this.warn(`[WS Manager] Máximo de reintentos alcanzado para instalación ${instalacionId}`)
       }
     }
   }
@@ -222,7 +258,7 @@ class WebSocketManager {
    * @param callback - Función a ejecutar cuando se reciba una nueva lectura
    * @returns Función de cleanup para cancelar la suscripción
    */
-  subscribe(instalacionId: number, callback: SubscriberCallback): () => void {
+  subscribe(instalacionId: number, callback: SubscriberCallback, onStatus?: ConnectionStatusCallback): () => void {
     const key = this.getConnectionKey(instalacionId)
     this.cancelPendingClose(key)
 
@@ -233,18 +269,35 @@ class WebSocketManager {
 
     // Añadir callback al set de suscriptores
     this.subscribers.get(key)!.add(callback)
+    if (onStatus) {
+      if (!this.statusSubscribers.has(key)) {
+        this.statusSubscribers.set(key, new Set())
+      }
+      this.statusSubscribers.get(key)!.add(onStatus)
+    }
 
     // Asegurar que la conexión existe
-    this.getOrCreateConnection(instalacionId)
+    const connection = this.getOrCreateConnection(instalacionId)
+    if (onStatus && connection) {
+      if (connection.socket.readyState === WebSocket.OPEN) onStatus('open')
+      else if (connection.socket.readyState === WebSocket.CONNECTING) onStatus('connecting')
+      else onStatus('closed')
+    }
 
-    console.log(`[WS Manager] 📝 Suscriptor añadido para instalación ${instalacionId} (total: ${this.subscribers.get(key)!.size})`)
+    this.log(`[WS Manager] Suscriptor añadido para instalación ${instalacionId} (total: ${this.subscribers.get(key)!.size})`)
 
     // Devolver función de cleanup
     return () => {
       const subscribers = this.subscribers.get(key)
       if (subscribers) {
         subscribers.delete(callback)
-        console.log(`[WS Manager] 📝 Suscriptor eliminado de instalación ${instalacionId} (restantes: ${subscribers.size})`)
+        this.log(`[WS Manager] Suscriptor eliminado de instalación ${instalacionId} (restantes: ${subscribers.size})`)
+
+        const statusSet = this.statusSubscribers.get(key)
+        if (onStatus && statusSet) {
+          statusSet.delete(onStatus)
+          if (statusSet.size === 0) this.statusSubscribers.delete(key)
+        }
 
         // Si no quedan suscriptores, cerrar la conexión
         if (subscribers.size === 0) {
@@ -270,7 +323,7 @@ class WebSocketManager {
     this.cancelPendingClose(key)
 
     if (connection) {
-      console.log(`[WS Manager] 🔌 Cerrando conexión de instalación ${instalacionId}`)
+      this.log(`[WS Manager] Cerrando conexión de instalación ${instalacionId}`)
       
       // Limpiar timeout de reconexión
       if (connection.reconnectTimeout) {
@@ -286,17 +339,20 @@ class WebSocketManager {
 
       // Eliminar del pool
       this.connections.delete(key)
+      this.notifyStatus(key, 'closed')
     }
 
     // Limpiar suscriptores
     this.subscribers.delete(key)
+    this.statusSubscribers.delete(key)
+    this.reconnectAttempts.delete(key)
   }
 
   /**
    * Cerrar todas las conexiones
    */
   closeAll() {
-    console.log('[WS Manager] 🔌 Cerrando todas las conexiones...')
+    this.log('[WS Manager] Cerrando todas las conexiones...')
 
     this.pendingCloseTimeouts.forEach((timeout) => clearTimeout(timeout))
     this.pendingCloseTimeouts.clear()
@@ -314,6 +370,8 @@ class WebSocketManager {
 
     this.connections.clear()
     this.subscribers.clear()
+    this.statusSubscribers.clear()
+    this.reconnectAttempts.clear()
   }
 
   /**
@@ -342,4 +400,4 @@ class WebSocketManager {
 export const wsManager = new WebSocketManager()
 
 // Exportar tipos
-export type { LecturaData, WebSocketMessage }
+export type { LecturaData, WebSocketMessage, ConnectionStatus }

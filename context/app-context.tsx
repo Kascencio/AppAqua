@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react"
 import type {
   EmpresaSucursalCompleta,
   InstalacionCompleta,
@@ -637,8 +637,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [hydrateFromCache, isAuthenticated, isAuthLoading, refreshData])
 
-  return (
-    <AppContext.Provider value={{
+  const contextValue = useMemo(() => ({
       empresasSucursales,
       instalaciones,
       especies,
@@ -653,7 +652,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       refreshData,
       selectedEmpresa,
       setSelectedEmpresa
-    }}>
+    }), [
+      empresasSucursales,
+      instalaciones,
+      especies,
+      procesos,
+      alerts,
+      users,
+      stats,
+      catalogoSensores,
+      sensoresInstalados,
+      isLoading,
+      error,
+      refreshData,
+      selectedEmpresa,
+      setSelectedEmpresa,
+    ])
+
+  return (
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   )
