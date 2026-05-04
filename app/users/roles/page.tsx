@@ -44,14 +44,7 @@ interface PermissionGroup {
   }[]
 }
 
-function getAccessToken(): string | null {
-  const cookieToken = document.cookie
-    .split(';')
-    .find(c => c.trim().startsWith('access_token='))
-    ?.split('=')[1]
 
-  return cookieToken ? decodeURIComponent(cookieToken) : localStorage.getItem('token')
-}
 
 const PERMISSION_GROUPS: PermissionGroup[] = [
   {
@@ -163,12 +156,8 @@ export default function RolesPage() {
     try {
       setLoading(true)
       setError(null)
-      const token = getAccessToken()
-
       const response = await fetch('/api/roles', {
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        credentials: 'include',
       })
 
       if (!response.ok) {
@@ -236,15 +225,13 @@ export default function RolesPage() {
     }
 
     try {
-      const token = getAccessToken()
-
       if (selectedRole) {
         // Editar rol
         const response = await fetch(`/api/roles/${selectedRole.id_rol}`, {
           method: 'PUT',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ nombre: roleName }),
         })
@@ -263,9 +250,9 @@ export default function RolesPage() {
         // Crear rol
         const response = await fetch('/api/roles', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ nombre: roleName }),
         })
@@ -296,13 +283,9 @@ export default function RolesPage() {
     if (!selectedRole) return
 
     try {
-      const token = getAccessToken()
-
       const response = await fetch(`/api/roles/${selectedRole.id_rol}`, {
         method: 'DELETE',
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
+        credentials: 'include',
       })
 
       if (!response.ok) {

@@ -110,29 +110,10 @@ class WebSocketManager {
       return this.connections.get(key)!
     }
 
-    // Obtener token de autenticación
-    let token: string | null = null
-    if (typeof document !== 'undefined') {
-      token = document.cookie
-        .split(';')
-        .find(c => c.trim().startsWith('access_token='))
-        ?.split('=')[1] || null
-
-      if (token) {
-        token = decodeURIComponent(token)
-      }
-      
-      if (!token) {
-        // AuthContext guarda el token en `localStorage.setItem('token', ...)`
-        token = localStorage.getItem('token') || localStorage.getItem('access_token')
-      }
-    }
-
-    // Construir URL con filtro de instalación y token
-    let wsUrl = `${this.baseUrl}?instalacionId=${instalacionId}`
-    if (token) {
-      wsUrl += `&token=${encodeURIComponent(token)}`
-    }
+    // Construir URL con filtro de instalación
+    // NOTA: El backend WS no requiere autenticación por token.
+    // La cookie httpOnly se envía automáticamente con la conexión WebSocket.
+    const wsUrl = `${this.baseUrl}?instalacionId=${instalacionId}`
 
     this.notifyStatus(key, 'connecting')
     this.log(`[WS Manager] Creando conexión para instalación ${instalacionId}`)
