@@ -49,6 +49,6 @@ pnpm-debug.log*
 docker-compose*.yml
 Dockerfile
 
-# Local dev file
+# Local dev files
 local
 proxy.ts

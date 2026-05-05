@@ -37,11 +37,27 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # SQL dumps (don't belong in frontend repo)
 *.sql
 
-# Local dev artifacts
-local
+# Local dev artifacts (not part of production)
 analysis/
 fixes/
+scripts/test-*
+scripts/*.sql
+local/
+
+# Legacy / unused files
+proxy.ts
+lib/storage.ts
+lib/password-recovery-delivery.ts
+lib/telegram.ts
+
+# Docker dev compose (use root docker-compose.prod.yml for prod)
+docker-compose.yml
+docker-compose.dev.yml
+docker-compose.override.yml
