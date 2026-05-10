@@ -8,12 +8,10 @@
 // En navegador y servidor de Next: usar route handlers locales en /api/*.
 // Si se ejecuta en scripts Node fuera de Next, el baseUrl puede apuntar directo al backend externo.
 const EXTERNAL_BACKEND_URL =
-  process.env.EXTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
-  'http://localhost:3100'
+  'https://api.midominio.com'
 
-const IS_SERVER = typeof window === 'undefined'
-const API_BASE_URL = IS_SERVER ? EXTERNAL_BACKEND_URL : ''
+const API_BASE_URL = EXTERNAL_BACKEND_URL
 const API_PREFIX = '/api'
 
 // ============================================

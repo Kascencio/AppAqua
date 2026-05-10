@@ -177,7 +177,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const forgotPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch("/api/auth/forgot-password", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_EXTERNAL_API_URL || 'https://api.midominio.com'}/api/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -197,7 +197,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const resetPassword = async (token: string, newPassword: string, confirmPassword: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch("/api/auth/reset-password", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_EXTERNAL_API_URL || 'https://api.midominio.com'}/api/auth/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

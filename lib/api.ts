@@ -1,6 +1,5 @@
-const rawApiUrl = (process.env.NEXT_PUBLIC_API_URL || "/api").trim()
-const normalizedApiUrl = rawApiUrl.replace(/\/$/, "")
-const API_URL = normalizedApiUrl === "/external-api" ? "/api" : normalizedApiUrl
+const rawApiUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "https://api.midominio.com").trim()
+const API_URL = rawApiUrl.replace(/\/$/, "")
 
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>
