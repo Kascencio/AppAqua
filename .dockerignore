@@ -17,15 +17,9 @@ build
 .env
 .env.*
 !.env.example
-
-# Documentation / analysis (not needed in image)
+# Documentation
 *.md
-analysis
-fixes
 docs
-
-# Scripts (local dev tools only)
-scripts
 
 # IDE
 .vscode
@@ -46,9 +40,7 @@ npm-debug.log*
 pnpm-debug.log*
 
 # Docker files
-docker-compose*.yml
 Dockerfile
 
 # Local dev files
 local
-proxy.ts
