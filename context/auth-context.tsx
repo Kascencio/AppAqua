@@ -32,22 +32,6 @@ interface AuthProviderProps {
   children: ReactNode
 }
 
-function resolveAuthApiBaseUrl(): string {
-  const rawUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "").trim()
-  if (!rawUrl) return ""
-
-  const normalized = rawUrl.replace(/\/$/, "")
-
-  try {
-    const parsed = new URL(normalized)
-    if (parsed.hostname === "api.midominio.com") {
-      return ""
-    }
-    return parsed.toString().replace(/\/$/, "")
-  } catch {
-    return normalized.startsWith("/") ? normalized : ""
-  }
-}
 
 // Helper to map backend user to frontend User type
 const mapUser = (backendUser: any): User => {
@@ -194,8 +178,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const forgotPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const authApiBaseUrl = resolveAuthApiBaseUrl()
-      const response = await fetch(`${authApiBaseUrl}/api/auth/forgot-password`, {
+      const response = await fetch(`/api/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -215,8 +198,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const resetPassword = async (token: string, newPassword: string, confirmPassword: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const authApiBaseUrl = resolveAuthApiBaseUrl()
-      const response = await fetch(`${authApiBaseUrl}/api/auth/reset-password`, {
+      const response = await fetch(`/api/auth/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

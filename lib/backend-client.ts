@@ -5,26 +5,10 @@
  * Proporciona métodos tipo-seguros para todos los endpoints REST disponibles.
  */
 
-// Si NEXT_PUBLIC_EXTERNAL_API_URL no está definido (o queda en placeholder),
-// usamos rutas relativas del mismo dominio para evitar requests a hosts inexistentes.
-function resolveApiBaseUrl(): string {
-  const rawUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "").trim()
-  if (!rawUrl) return ""
-
-  const normalized = rawUrl.replace(/\/$/, "")
-
-  try {
-    const parsed = new URL(normalized)
-    if (parsed.hostname === "api.midominio.com") {
-      return ""
-    }
-    return parsed.toString().replace(/\/$/, "")
-  } catch {
-    return normalized.startsWith("/") ? normalized : ""
-  }
-}
-
-const API_BASE_URL = resolveApiBaseUrl()
+// Las peticiones HTTP siempre usan rutas relativas (base URL vacía).
+// Next.js rewrite (/api/*) las redirige al backend configurado en EXTERNAL_API_URL.
+// Solo los WebSockets necesitan NEXT_PUBLIC_WS_URL (conexión directa desde el navegador).
+const API_BASE_URL = ""
 const API_PREFIX = '/api'
 
 // ============================================

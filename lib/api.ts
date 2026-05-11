@@ -1,21 +1,5 @@
-function resolveApiUrl(): string {
-  const rawApiUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "").trim()
-  if (!rawApiUrl) return ""
-
-  const normalized = rawApiUrl.replace(/\/$/, "")
-
-  try {
-    const parsed = new URL(normalized)
-    if (parsed.hostname === "api.midominio.com") {
-      return ""
-    }
-    return parsed.toString().replace(/\/$/, "")
-  } catch {
-    return normalized.startsWith("/") ? normalized : ""
-  }
-}
-
-const API_URL = resolveApiUrl()
+// Rutas relativas siempre; Next.js rewrite (/api/*) las envía al backend real.
+const API_URL = ""
 
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>
