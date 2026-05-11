@@ -902,20 +902,9 @@ export class BackendApiClient {
   // ========================================
 
   async login(email: string, password: string) {
+    // Siempre apunta a /api/auth/login (proxied por Next.js rewrite → backend)
     const payload = { correo: email, password }
-    try {
-      // Flujo principal via route handlers locales /api/*
-      return await this.http.post<any>(`${API_PREFIX}/login`, payload)
-    } catch (error) {
-      // Fallback defensivo (mantiene compatibilidad con path de auth explícito)
-      const isBrowser = typeof window !== 'undefined'
-      const shouldTryAuthLoginFallback =
-        error instanceof BackendApiError && (error.statusCode === 404 || error.statusCode === 502 || error.statusCode === 0)
-      if (isBrowser && shouldTryAuthLoginFallback) {
-        return this.http.post<any>('/api/auth/login', payload)
-      }
-      throw error
-    }
+    return this.http.post<any>(`${API_PREFIX}/auth/login`, payload)
   }
 
   async getMe() {

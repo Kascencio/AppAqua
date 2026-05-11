@@ -27,6 +27,16 @@ const nextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
+        // Proxy todas las rutas /api/* al backend real (server-side, runtime env)
+        {
+          source: '/api/:path*',
+          destination: `${EXTERNAL_BACKEND_URL}/api/:path*`,
+        },
+        // Proxy WebSocket lectures y notificaciones
+        {
+          source: '/ws/:path*',
+          destination: `${EXTERNAL_BACKEND_URL}/ws/:path*`,
+        },
         {
           source: '/health',
           destination: `${EXTERNAL_BACKEND_URL}/health`,
