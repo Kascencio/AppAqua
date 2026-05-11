@@ -1,5 +1,21 @@
-const rawApiUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "https://api.midominio.com").trim()
-const API_URL = rawApiUrl.replace(/\/$/, "")
+function resolveApiUrl(): string {
+  const rawApiUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "").trim()
+  if (!rawApiUrl) return ""
+
+  const normalized = rawApiUrl.replace(/\/$/, "")
+
+  try {
+    const parsed = new URL(normalized)
+    if (parsed.hostname === "api.midominio.com") {
+      return ""
+    }
+    return parsed.toString().replace(/\/$/, "")
+  } catch {
+    return normalized.startsWith("/") ? normalized : ""
+  }
+}
+
+const API_URL = resolveApiUrl()
 
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>

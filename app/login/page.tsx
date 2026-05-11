@@ -86,6 +86,7 @@ export default function LoginPage() {
                 name="email"
                 type="email"
                 placeholder="tu@email.com"
+                autoComplete="username"
                 value={formData.email}
                 onChange={handleInputChange}
                 required
@@ -101,6 +102,7 @@ export default function LoginPage() {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Tu contraseña"
+                  autoComplete="current-password"
                   value={formData.password}
                   onChange={handleInputChange}
                   required

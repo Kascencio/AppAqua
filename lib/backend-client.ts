@@ -5,13 +5,26 @@
  * Proporciona métodos tipo-seguros para todos los endpoints REST disponibles.
  */
 
-// En navegador y servidor de Next: usar route handlers locales en /api/*.
-// Si se ejecuta en scripts Node fuera de Next, el baseUrl puede apuntar directo al backend externo.
-const EXTERNAL_BACKEND_URL =
-  process.env.NEXT_PUBLIC_EXTERNAL_API_URL ||
-  'https://api.midominio.com'
+// Si NEXT_PUBLIC_EXTERNAL_API_URL no está definido (o queda en placeholder),
+// usamos rutas relativas del mismo dominio para evitar requests a hosts inexistentes.
+function resolveApiBaseUrl(): string {
+  const rawUrl = (process.env.NEXT_PUBLIC_EXTERNAL_API_URL || "").trim()
+  if (!rawUrl) return ""
 
-const API_BASE_URL = EXTERNAL_BACKEND_URL
+  const normalized = rawUrl.replace(/\/$/, "")
+
+  try {
+    const parsed = new URL(normalized)
+    if (parsed.hostname === "api.midominio.com") {
+      return ""
+    }
+    return parsed.toString().replace(/\/$/, "")
+  } catch {
+    return normalized.startsWith("/") ? normalized : ""
+  }
+}
+
+const API_BASE_URL = resolveApiBaseUrl()
 const API_PREFIX = '/api'
 
 // ============================================
