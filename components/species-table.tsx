@@ -136,7 +136,8 @@ export function SpeciesTable({ species, parameters, speciesParameters, loading, 
               {searchTerm ? "No se encontraron especies" : "No hay especies registradas"}
             </div>
           ) : (
-            <Table>
+            <div className="w-full overflow-x-auto">
+              <Table className="min-w-[980px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
@@ -238,7 +239,8 @@ export function SpeciesTable({ species, parameters, speciesParameters, loading, 
                   )
                 })}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

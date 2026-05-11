@@ -1,163 +1,18 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  useMap,
-  ZoomControl,
-  LayersControl,
-  Circle,
-  FeatureGroup,
-} from "react-leaflet"
-import L from "leaflet"
-import "leaflet/dist/leaflet.css"
-import { Card } from "@/components/ui/card"
+import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, Navigation, Plus, Minus, Locate, AlertTriangle, Droplets } from "lucide-react"
-import Link from "next/link"
+import {
+  Map,
+  MapControls,
+  MapMarker,
+  MarkerContent,
+  MarkerPopup,
+  useMap,
+} from "@/components/ui/map"
+import { AlertTriangle, MapPin, Navigation, Plus, X } from "lucide-react"
 import type { Branch } from "@/types/branch"
-import MarkerClusterGroup from "react-leaflet-cluster"
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
-
-// Componente para volar a un marcador específico
-function FlyToMarker({ position }: { position: [number, number] | null }) {
-  const map = useMap()
-
-  useEffect(() => {
-    if (position) {
-      map.flyTo(position, 13, {
-        duration: 1.5,
-      })
-    }
-  }, [map, position])
-
-  return null
-}
-
-// Componente para manejar el redimensionamiento del mapa
-function ResizeHandler() {
-  const map = useMap()
-
-  useEffect(() => {
-    // Función para actualizar el tamaño del mapa
-    const handleResize = () => {
-      map.invalidateSize()
-    }
-
-    // Agregar listener para el evento resize
-    window.addEventListener("resize", handleResize)
-
-    // Invalidar tamaño inicialmente y después de un breve retraso
-    // para asegurar que el contenedor tenga el tamaño correcto
-    handleResize()
-    const timer = setTimeout(handleResize, 300)
-
-    // Limpiar listeners al desmontar
-    return () => {
-      window.removeEventListener("resize", handleResize)
-      clearTimeout(timer)
-    }
-  }, [map])
-
-  return null
-}
-
-// Componente para añadir controles personalizados
-function CustomControls() {
-  const map = useMap()
-
-  const handleLocate = () => {
-    map.locate({ setView: true, maxZoom: 13 })
-  }
-
-  const handleZoomIn = () => {
-    map.zoomIn()
-  }
-
-  const handleZoomOut = () => {
-    map.zoomOut()
-  }
-
-  return (
-    <div className="leaflet-top leaflet-left mt-16">
-      <div className="leaflet-control leaflet-bar flex flex-col bg-white dark:bg-gray-800 shadow-md rounded-md overflow-hidden">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-200 dark:border-gray-700"
-                onClick={handleLocate}
-              >
-                <Locate className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Mi ubicación</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-200 dark:border-gray-700"
-                onClick={handleZoomIn}
-              >
-                <Plus className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Acercar</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700" onClick={handleZoomOut}>
-                <Minus className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Alejar</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
-    </div>
-  )
-}
-
-// Componente para mostrar leyenda del mapa
-function MapLegend() {
-  return (
-    <div className="leaflet-bottom leaflet-right mb-10 mr-2">
-      <div className="leaflet-control p-3 bg-white dark:bg-gray-800 shadow-md rounded-md">
-        <h4 className="text-sm font-medium mb-2">Leyenda</h4>
-        <div className="space-y-2">
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded-full bg-green-500 mr-2"></div>
-            <span className="text-xs">Sucursal activa</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded-full bg-gray-500 mr-2"></div>
-            <span className="text-xs">Sucursal inactiva</span>
-          </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded-full bg-amber-500 mr-2"></div>
-            <span className="text-xs">Con alertas</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 interface MapComponentProps {
   branches: Branch[]
@@ -166,293 +21,231 @@ interface MapComponentProps {
   flyToPosition?: [number, number] | null
 }
 
-export default function MapComponent({ branches, center = [17.9869, -92.9303], onBranchSelect, flyToPosition = null }: MapComponentProps) {
-  const [activeMarker, setActiveMarker] = useState<string | number | null>(null)
-  
-  // Filter branches that have valid coordinates
-  const branchesWithCoords = branches.filter((b): b is Branch & { coordinates: [number, number] } => 
-    Array.isArray(b.coordinates) && b.coordinates.length === 2
-  )
-  const mapRef = useRef<L.Map | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [mapType, setMapType] = useState<string>("street")
+type Coordinate = { lng: number; lat: number }
 
-  // Crear íconos personalizados para los marcadores
-  const getMarkerIcon = (status: string, hasAlerts = false) => {
-    let iconUrl = ""
-
-    if (hasAlerts) {
-      iconUrl = "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png"
-    } else if (status === "active") {
-      iconUrl = "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png"
-    } else {
-      iconUrl = "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png"
+function toLngLatFromBranch(branch: Branch): Coordinate | null {
+  const coords = Array.isArray(branch.coordinates) ? branch.coordinates : null
+  if (coords && coords.length === 2) {
+    const lat = Number(coords[0])
+    const lng = Number(coords[1])
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return { lng, lat }
     }
-
-    return new L.Icon({
-      iconUrl,
-      shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png",
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41],
-    })
   }
 
-  // Verificar si una sucursal tiene alertas
+  const location = branch.location
+  if (location && Number.isFinite(location.lat) && Number.isFinite(location.lng)) {
+    return { lng: Number(location.lng), lat: Number(location.lat) }
+  }
+
+  return null
+}
+
+function MapFlyTo({ target }: { target: [number, number] | null }) {
+  const { map } = useMap()
+
+  useEffect(() => {
+    if (!map || !target) return
+    // target llega en [lat, lng], MapLibre usa [lng, lat]
+    map.flyTo({ center: [target[1], target[0]], zoom: 13, duration: 1400 })
+  }, [map, target])
+
+  return null
+}
+
+function MapClickCapture({
+  enabled,
+  onPointAdded,
+}: {
+  enabled: boolean
+  onPointAdded: (point: Coordinate) => void
+}) {
+  const { map } = useMap()
+
+  useEffect(() => {
+    if (!map || !enabled) return
+
+    const handleClick = (event: any) => {
+      const point = {
+        lng: Number(event.lngLat.lng),
+        lat: Number(event.lngLat.lat),
+      }
+      onPointAdded(point)
+    }
+
+    map.getCanvas().style.cursor = "crosshair"
+    map.on("click", handleClick)
+
+    return () => {
+      map.off("click", handleClick)
+      map.getCanvas().style.cursor = ""
+    }
+  }, [enabled, map, onPointAdded])
+
+  return null
+}
+
+export default function MapComponent({
+  branches,
+  center = [17.9869, -92.9303],
+  onBranchSelect,
+  flyToPosition = null,
+}: MapComponentProps) {
+  const [addPointMode, setAddPointMode] = useState(false)
+  const [userPoint, setUserPoint] = useState<Coordinate | null>(null)
+
+  const branchesWithCoords = useMemo(() => {
+    return branches
+      .map((branch) => {
+        const coordinate = toLngLatFromBranch(branch)
+        if (!coordinate) return null
+        return {
+          branch,
+          coordinate,
+          facilities: Array.isArray(branch.facilities) ? branch.facilities : [],
+        }
+      })
+      .filter((item): item is { branch: Branch; coordinate: Coordinate; facilities: any[] } => Boolean(item))
+  }, [branches])
+
   const branchHasAlerts = (branch: Branch): boolean => {
     const facilities = branch.facilities || []
     for (const facility of facilities) {
-      const water = facility.waterQuality || {}
-      for (const [param, config] of Object.entries(water as Record<string, any>)) {
+      const water = (facility as any).waterQuality || {}
+      for (const config of Object.values(water as Record<string, any>)) {
         const value = Number((config as any).value ?? 0)
         const min = Number((config as any).minValue ?? 0)
         const max = Number((config as any).maxValue ?? 100)
-        if (value < min || value > max) {
-          return true
-        }
+        if (value < min || value > max) return true
       }
     }
     return false
   }
 
-  // Calcular el radio del círculo basado en el número de instalaciones
-  const getCircleRadius = (facilitiesCount: number): number => {
-    return Math.max(100, facilitiesCount * 50)
+  const markerClass = (status: string, hasAlerts: boolean) => {
+    if (hasAlerts) {
+      return "h-4 w-4 rounded-full border-2 border-white bg-amber-500 shadow-[0_0_0_5px_rgba(245,158,11,0.24)]"
+    }
+    if (status === "active") {
+      return "h-4 w-4 rounded-full border-2 border-white bg-emerald-500 shadow-[0_0_0_5px_rgba(16,185,129,0.24)]"
+    }
+    return "h-4 w-4 rounded-full border-2 border-white bg-slate-400 shadow-[0_0_0_5px_rgba(148,163,184,0.25)]"
   }
 
-  // Corregir el problema de los íconos de Leaflet
-  useEffect(() => {
-    // Solo ejecutar en el cliente
-    if (typeof window !== "undefined") {
-      // Solución para los íconos de Leaflet en Next.js
-      delete (L.Icon.Default.prototype as any)._getIconUrl
-
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png",
-        iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
-        shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
-      })
-    }
-
-    // Invalidar tamaño del mapa cuando se monta
-    const timer = setTimeout(() => {
-      if (mapRef.current) {
-        mapRef.current.invalidateSize()
-      }
-    }, 100)
-
-    return () => clearTimeout(timer)
-  }, [])
-
-  // Observador de redimensionamiento para el contenedor del mapa
-  useEffect(() => {
-    if (!containerRef.current) return
-
-    // Crear un ResizeObserver para detectar cambios en el tamaño del contenedor
-    const resizeObserver = new ResizeObserver(() => {
-      if (mapRef.current) {
-        mapRef.current.invalidateSize()
-      }
-    })
-
-    // Observar el contenedor del mapa
-    resizeObserver.observe(containerRef.current)
-
-    return () => {
-      resizeObserver.disconnect()
-    }
-  }, [])
-
   return (
-    <div ref={containerRef} className="h-full w-full relative">
-      <MapContainer
-        center={center}
+    <div className="h-full w-full relative rounded-lg overflow-hidden border">
+      <Map
+        className="h-full w-full"
+        center={[center[1], center[0]]}
         zoom={6}
-        style={{ height: "100%", width: "100%", zIndex: 1 }}
-        attributionControl={false}
-        zoomControl={false} // Desactivamos el control de zoom predeterminado para posicionarlo mejor
-        ref={(map) => {
-          if (map) {
-            mapRef.current = map
-            setTimeout(() => map.invalidateSize(), 250)
-          }
-        }}
-        className="leaflet-map-container"
+        maxZoom={18}
+        minZoom={4}
       >
-        <LayersControl position="topright">
-          <LayersControl.BaseLayer checked name="OpenStreetMap">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-          </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Satélite">
-            <TileLayer
-              attribution='&copy; <a href="https://www.esri.com">Esri</a>'
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            />
-          </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Terreno">
-            <TileLayer
-              attribution='&copy; <a href="https://www.opentopomap.org">OpenTopoMap</a>'
-              url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
-            />
-          </LayersControl.BaseLayer>
-
-          <LayersControl.Overlay name="Áreas de cobertura">
-            <FeatureGroup>
-              {branchesWithCoords.map((branch) => (
-                <Circle
-                  key={`circle-${branch.id}`}
-                  center={branch.coordinates}
-                  radius={getCircleRadius((branch.facilities?.length) || 0)}
-                  pathOptions={{
-                    color: branchHasAlerts(branch) ? "#f59e0b" : branch.status === "active" ? "#10b981" : "#6b7280",
-                    fillColor: branchHasAlerts(branch) ? "#fcd34d" : branch.status === "active" ? "#a7f3d0" : "#d1d5db",
-                    fillOpacity: 0.3,
-                    weight: 1,
-                  }}
-                />
-              ))}
-            </FeatureGroup>
-          </LayersControl.Overlay>
-        </LayersControl>
-
-        <MarkerClusterGroup
-          chunkedLoading
-          iconCreateFunction={(cluster: { getChildCount: () => number }) => {
-            const childCount = cluster.getChildCount()
-            let className = "marker-cluster-"
-
-            if (childCount < 10) {
-              className += "small"
-            } else if (childCount < 100) {
-              className += "medium"
-            } else {
-              className += "large"
-            }
-
-            return new L.DivIcon({
-              html: `<div><span>${childCount}</span></div>`,
-              className: `${className} marker-cluster-custom`,
-              iconSize: new L.Point(40, 40),
-            })
+        <MapControls position="bottom-right" showZoom showLocate />
+        <MapFlyTo target={flyToPosition} />
+        <MapClickCapture
+          enabled={addPointMode}
+          onPointAdded={(point) => {
+            setUserPoint(point)
+            setAddPointMode(false)
           }}
-        >
-          {branchesWithCoords.map((branch) => {
-            const hasAlerts = branchHasAlerts(branch)
-            const facilities = branch.facilities || []
-            const sensorsTotal = facilities.reduce((total, facility) => total + ((facility as any).sensors?.length || 0), 0)
-            return (
-              <Marker
-                key={branch.id}
-                position={branch.coordinates}
-                icon={getMarkerIcon(branch.status, hasAlerts)}
-                eventHandlers={{
-                  click: () => {
-                    setActiveMarker(branch.id)
-                    onBranchSelect(String(branch.id))
-                  },
-                }}
-              >
-                <Popup minWidth={250} maxWidth={320} className="map-popup">
-                  <Card className="border-0 shadow-none">
-                    <div className="p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-medium text-base">{branch.name}</h3>
-                        <Badge variant={branch.status === "active" ? "default" : "secondary"}>
-                          {branch.status === "active" ? "Activa" : "Inactiva"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-2">{(branch as any).location || ''}</p>
+        />
 
-                      <div className="grid grid-cols-2 gap-2 mb-3">
-                        <div className="bg-muted/30 p-2 rounded-md text-center">
-                          <div className="text-sm font-medium">{facilities.length}</div>
-                          <div className="text-xs text-muted-foreground">Instalaciones</div>
-                        </div>
+        {branchesWithCoords.map(({ branch, coordinate, facilities }) => {
+          const hasAlerts = branchHasAlerts(branch)
+          const sensorsTotal = facilities.reduce((total, facility) => {
+            return total + (((facility as any).sensors || []).length || 0)
+          }, 0)
 
-                        <div className="bg-muted/30 p-2 rounded-md text-center">
-                          <div className="text-sm font-medium">{sensorsTotal}</div>
-                          <div className="text-xs text-muted-foreground">Sensores</div>
-                        </div>
-                      </div>
+          return (
+            <MapMarker
+              key={String(branch.id)}
+              longitude={coordinate.lng}
+              latitude={coordinate.lat}
+              onClick={() => onBranchSelect(String(branch.id))}
+            >
+              <MarkerContent>
+                <div className={markerClass(branch.status, hasAlerts)} />
+              </MarkerContent>
 
-                      {hasAlerts && (
-                        <div className="flex items-center gap-2 mb-3 p-2 bg-amber-100 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 rounded-md">
-                          <AlertTriangle className="h-4 w-4" />
-                          <span className="text-xs">Parámetros fuera de rango</span>
-                        </div>
-                      )}
+              <MarkerPopup>
+                <div className="space-y-3 min-w-[240px]">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold leading-tight">{branch.name}</p>
+                    <Badge variant={branch.status === "active" ? "default" : "secondary"}>
+                      {branch.status === "active" ? "Activa" : "Inactiva"}
+                    </Badge>
+                  </div>
 
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {facilities.slice(0, 3).map((facility: any) => (
-                          <Badge key={facility.id} variant="outline" className="text-xs">
-                            <Droplets className="h-3 w-3 mr-1" />
-                            {facility.name}
-                          </Badge>
-                        ))}
-                        {facilities.length > 3 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{facilities.length - 3} más
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex justify-between gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs flex-1 bg-transparent"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (mapRef.current) {
-                              mapRef.current.flyTo(branch.coordinates, 14)
-                            }
-                          }}
-                        >
-                          <Navigation className="h-3 w-3 mr-1" />
-                          Centrar
-                        </Button>
-
-                        <Link href={`/branches/${branch.id}`} className="flex-1">
-                          <Button variant="default" size="sm" className="text-xs w-full">
-                            Ver detalles
-                            <ChevronRight className="h-3 w-3 ml-1" />
-                          </Button>
-                        </Link>
-                      </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md border p-2 text-center">
+                      <p className="font-semibold text-sm">{facilities.length}</p>
+                      <p className="text-muted-foreground">Instalaciones</p>
                     </div>
-                  </Card>
-                </Popup>
-              </Marker>
-            )
-          })}
-        </MarkerClusterGroup>
+                    <div className="rounded-md border p-2 text-center">
+                      <p className="font-semibold text-sm">{sensorsTotal}</p>
+                      <p className="text-muted-foreground">Sensores</p>
+                    </div>
+                  </div>
 
-        {/* Añadir control de zoom en una posición más accesible */}
-        <ZoomControl position="bottomright" />
+                  {hasAlerts && (
+                    <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-800">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span className="text-xs">Parámetros fuera de rango</span>
+                    </div>
+                  )}
+                </div>
+              </MarkerPopup>
+            </MapMarker>
+          )
+        })}
 
-        {/* Controles personalizados */}
-        <CustomControls />
+        {userPoint && (
+          <MapMarker longitude={userPoint.lng} latitude={userPoint.lat}>
+            <MarkerContent>
+              <div className="h-4 w-4 rounded-full border-2 border-white bg-primary shadow-[0_0_0_5px_rgba(14,165,233,0.24)]" />
+            </MarkerContent>
+            <MarkerPopup>
+              <div className="space-y-2 text-sm min-w-[220px]">
+                <p className="font-semibold">Punto agregado en el mapa</p>
+                <p className="text-xs text-muted-foreground">
+                  Lat: {userPoint.lat.toFixed(6)} | Lng: {userPoint.lng.toFixed(6)}
+                </p>
+              </div>
+            </MarkerPopup>
+          </MapMarker>
+        )}
+      </Map>
 
-        {/* Leyenda del mapa */}
-        <MapLegend />
+      <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-full border bg-background/95 p-1.5 shadow-md">
+        <Button
+          type="button"
+          size="icon"
+          variant={addPointMode ? "default" : "outline"}
+          className="h-10 w-10 rounded-full"
+          onClick={() => setAddPointMode((prev) => !prev)}
+          title={addPointMode ? "Cancelar agregar punto" : "Agregar punto"}
+        >
+          {addPointMode ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+        </Button>
 
-        {/* Componente para manejar el redimensionamiento */}
-        <ResizeHandler />
-
-        {flyToPosition && <FlyToMarker position={flyToPosition} />}
-      </MapContainer>
-
-      {/* Botón flotante para añadir nueva sucursal */}
-      <div className="absolute bottom-4 left-4 z-[1000]">
-        <Link href="/branches/new">
-          <Button className="rounded-full w-12 h-12 p-0 bg-primary hover:bg-primary/90 shadow-lg">
-            <Plus className="h-5 w-5" />
+        {userPoint && (
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className="h-10 w-10 rounded-full"
+            onClick={() => setUserPoint(null)}
+            title="Quitar punto"
+          >
+            <MapPin className="h-4 w-4" />
           </Button>
-        </Link>
+        )}
+
+        <div className="hidden sm:flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+          <Navigation className="h-3 w-3" />
+          {addPointMode ? "Haz clic en el mapa para colocar un punto" : "Modo navegación"}
+        </div>
       </div>
     </div>
   )

@@ -27,6 +27,8 @@ import {
   Clock,
   CheckCircle2,
   Waves,
+  Wifi,
+  WifiOff,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useAppContext } from "@/context/app-context"
@@ -196,11 +198,38 @@ export default function DashboardPage() {
         return count > 0 ? sum / count : 0
       }
 
-      const [temp, ph, ox] = await Promise.all([
+      const fallbackAvgFromLiveReadings = (sensorList: any[]) => {
+        if (!sensorList.length) return 0
+        let sum = 0
+        let count = 0
+
+        for (const sensor of sensorList) {
+          const candidateValues = [
+            Number(sensor?.lastReading?.value),
+            Number(sensor?.ultima_lectura?.valor),
+            Number(sensor?.currentValue),
+            Number(sensor?.valor_actual),
+            Number(sensor?.value),
+          ]
+          const value = candidateValues.find((candidate) => Number.isFinite(candidate))
+          if (typeof value === "number") {
+            sum += value
+            count += 1
+          }
+        }
+
+        return count > 0 ? sum / count : 0
+      }
+
+      let [temp, ph, ox] = await Promise.all([
         fetchAvg(tempSensors),
         fetchAvg(phSensors),
         fetchAvg(oxSensors),
       ])
+
+      if (temp === 0) temp = fallbackAvgFromLiveReadings(tempSensors)
+      if (ph === 0) ph = fallbackAvgFromLiveReadings(phSensors)
+      if (ox === 0) ox = fallbackAvgFromLiveReadings(oxSensors)
 
       setPromedios24h({ temperatura: temp, ph, oxigeno: ox, loading: false })
     }
@@ -267,6 +296,7 @@ export default function DashboardPage() {
   const loadingApp = app?.isLoading ?? false
   const error = app?.error
   const refreshData = app?.refreshData
+  const alertsLiveConnected = app?.alertsLiveConnected ?? false
 
   const nombreEmpresaById = useMemo(
     () =>
@@ -623,13 +653,26 @@ export default function DashboardPage() {
               <CardTitle>Centro de Operaciones</CardTitle>
               <CardDescription>Monitoreo, catálogo e instalaciones en una sola vista</CardDescription>
             </div>
-            {promedios24h.loading ? (
-              <Badge variant="outline">Calculando calidad del agua...</Badge>
-            ) : (
-              <Badge variant={parametrosFueraRango > 0 ? "destructive" : "default"}>
-                {parametrosFueraRango > 0 ? `${parametrosFueraRango} parámetros fuera de rango` : "Parámetros en rango"}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={alertsLiveConnected ? "default" : "secondary"}>
+                {alertsLiveConnected ? (
+                  <>
+                    <Wifi className="mr-1 h-3 w-3" /> Tiempo real
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="mr-1 h-3 w-3" /> Sin tiempo real
+                  </>
+                )}
               </Badge>
-            )}
+              {promedios24h.loading ? (
+                <Badge variant="outline">Calculando calidad del agua...</Badge>
+              ) : (
+                <Badge variant={parametrosFueraRango > 0 ? "destructive" : "default"}>
+                  {parametrosFueraRango > 0 ? `${parametrosFueraRango} parámetros fuera de rango` : "Parámetros en rango"}
+                </Badge>
+              )}
+            </div>
           </div>
           <Separator />
           {!promedios24h.loading && (

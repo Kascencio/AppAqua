@@ -36,6 +36,7 @@ interface AppContextType {
   // Estados
   isLoading: boolean
   error: string | null
+  alertsLiveConnected: boolean
 
   // Funciones
   refreshData: (options?: { silent?: boolean; force?: boolean }) => Promise<void>
@@ -162,6 +163,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [alertsLiveConnected, setAlertsLiveConnected] = useState(false)
   const [selectedEmpresa, setSelectedEmpresa] = useState<number | null>(null)
   const hasLoadedOnceRef = useRef(false)
   const hasHydratedCacheRef = useRef(false)
@@ -580,12 +582,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      socket.onopen = () => {
+        setAlertsLiveConnected(true)
+      }
+
       socket.onclose = () => {
         socket = null
+        setAlertsLiveConnected(false)
         if (!disposed) scheduleReconnect()
       }
 
       socket.onerror = () => {
+        setAlertsLiveConnected(false)
         try {
           socket?.close()
         } catch {
@@ -598,6 +606,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       disposed = true
+      setAlertsLiveConnected(false)
       if (reconnectTimer) {
         clearTimeout(reconnectTimer)
       }
@@ -627,6 +636,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUsers([])
       setCatalogoSensores([])
       setSensoresInstalados([])
+      setAlertsLiveConnected(false)
       setIsLoading(false)
       hasLoadedOnceRef.current = false
       hasHydratedCacheRef.current = false
@@ -649,6 +659,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       sensoresInstalados,
       isLoading,
       error,
+      alertsLiveConnected,
       refreshData,
       selectedEmpresa,
       setSelectedEmpresa
@@ -664,6 +675,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       sensoresInstalados,
       isLoading,
       error,
+      alertsLiveConnected,
       refreshData,
       selectedEmpresa,
       setSelectedEmpresa,

@@ -58,7 +58,7 @@ export default function EspeciesPage() {
   }
 
   return (
-    <div className="space-y-6 fade-in">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6 px-4 pb-8 pt-6 md:px-8 fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Especies</h1>
@@ -192,15 +192,17 @@ export default function EspeciesPage() {
         </CardContent>
       </Card>
 
-      <SpeciesTable
-        species={species}
-        parameters={parameters}
-        speciesParameters={speciesParameters}
-        loading={loading}
-        onDelete={deleteSpecies}
-        onRefresh={loadSpecies}
-        canManage={canManageSpecies}
-      />
+      <div className="overflow-hidden rounded-lg">
+        <SpeciesTable
+          species={species}
+          parameters={parameters}
+          speciesParameters={speciesParameters}
+          loading={loading}
+          onDelete={deleteSpecies}
+          onRefresh={loadSpecies}
+          canManage={canManageSpecies}
+        />
+      </div>
 
       {canManageSpecies && (
         <AddSpeciesDialog open={showAddDialog} onOpenChange={setShowAddDialog} onSuccess={loadSpecies} />
