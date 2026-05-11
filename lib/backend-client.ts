@@ -909,9 +909,9 @@ export class BackendApiClient {
     } catch (error) {
       // Fallback defensivo (mantiene compatibilidad con path de auth explícito)
       const isBrowser = typeof window !== 'undefined'
-      const isGatewayError =
-        error instanceof BackendApiError && (error.statusCode === 502 || error.statusCode === 0)
-      if (isBrowser && isGatewayError) {
+      const shouldTryAuthLoginFallback =
+        error instanceof BackendApiError && (error.statusCode === 404 || error.statusCode === 502 || error.statusCode === 0)
+      if (isBrowser && shouldTryAuthLoginFallback) {
         return this.http.post<any>('/api/auth/login', payload)
       }
       throw error
