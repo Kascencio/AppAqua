@@ -1,33 +1,65 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { DateRange } from "react-day-picker"
 import type { Promedio } from "@/lib/backend-client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { Button } from "@/components/ui/button"
+import { useTheme } from "next-themes"
+import {
+  createChart,
+  ColorType,
+  LineSeries,
+  AreaSeries,
+  HistogramSeries,
+  type IChartApi,
+  type ISeriesApi,
+  type Time,
+} from "lightweight-charts"
 
-type SensorAverageRow = {
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type ChartType = "line" | "area" | "histogram"
+
+type SensorSeries = {
   sensorId: number
   name: string
   unit: string
-  promedio: number
-  muestras: number
+  color: string
+  data: Array<{ time: Time; value: number }>
 }
 
-function weightedAverage(promedios: Promedio[]): { avg: number; muestras: number } {
-  if (!promedios.length) return { avg: 0, muestras: 0 }
+// ─── Palette ─────────────────────────────────────────────────────────────────
 
-  const withMuestras = promedios.filter((p) => typeof p.muestras === "number" && Number(p.muestras) > 0)
-  if (withMuestras.length) {
-    const sumW = withMuestras.reduce((acc, p) => acc + Number(p.muestras || 0), 0)
-    const sumWV = withMuestras.reduce((acc, p) => acc + Number(p.promedio) * Number(p.muestras || 0), 0)
-    return { avg: sumW > 0 ? sumWV / sumW : 0, muestras: sumW }
+const PALETTE = [
+  "#2563eb", "#7c3aed", "#059669", "#06b6d4",
+  "#f59e0b", "#ef4444", "#8b5cf6", "#f97316",
+  "#84cc16", "#ec4899",
+]
+
+function getChartThemeOptions(isDark: boolean) {
+  return {
+    layout: {
+      background: { type: ColorType.Solid, color: isDark ? "#09090b" : "#ffffff" },
+      textColor: isDark ? "#a1a1aa" : "#52525b",
+    },
+    grid: {
+      vertLines: { color: isDark ? "#27272a" : "#f4f4f5" },
+      horzLines: { color: isDark ? "#27272a" : "#f4f4f5" },
+    },
+    timeScale: {
+      borderColor: isDark ? "#27272a" : "#e4e4e7",
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    rightPriceScale: {
+      borderColor: isDark ? "#27272a" : "#e4e4e7",
+    },
   }
-
-  const sum = promedios.reduce((acc, p) => acc + Number(p.promedio), 0)
-  return { avg: sum / promedios.length, muestras: promedios.length }
 }
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
 export function SensorAveragesChart({
   dateRange,
   sensors,
@@ -37,116 +69,200 @@ export function SensorAveragesChart({
   coverage,
 }: {
   dateRange: DateRange
-  sensors?: any[]
+  sensors?: unknown[]
   seriesBySensor?: Map<number, Promedio[]>
   loading?: boolean
   isRefreshing?: boolean
   coverage?: { queried: number; total: number }
 }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allSeriesRef = useRef<ISeriesApi<any>[]>([])
+
+  const { resolvedTheme } = useTheme()
+  const isDark = resolvedTheme === "dark"
+
+  const [chartType, setChartType] = useState<ChartType>("line")
+
   const from = dateRange?.from
   const to = dateRange?.to
 
-  const sensorsToQuery = useMemo(() => {
-    const source = Array.isArray(sensors) ? sensors : []
-    return (source || []).slice(0, 20)
-  }, [sensors])
+  const sourceSensors = useMemo(
+    () => (Array.isArray(sensors) ? (sensors as Array<Record<string, unknown>>) : []),
+    [sensors],
+  )
 
-  const rows = useMemo<SensorAverageRow[]>(() => {
+  // Build per-sensor time series (top 8 by number of data points)
+  const sensorSeries = useMemo<SensorSeries[]>(() => {
     if (!from || !to || !seriesBySensor) return []
 
-    const computed = sensorsToQuery.map((sensor: any) => {
-      const sensorId = Number(sensor.id_sensor_instalado)
-      const points = (seriesBySensor.get(sensorId) ?? []).filter((point) => {
-        const t = new Date(point.timestamp).getTime()
-        return Number.isFinite(t) && t >= from.getTime() && t <= to.getTime()
-      })
-      const { avg, muestras } = weightedAverage(points)
+    const top = sourceSensors.slice(0, 8)
+    return top.map((sensor, idx) => {
+      const sensorId = Number(sensor.id_sensor_instalado || 0)
+      const rawName = String(sensor.name || sensor.sensor || `Sensor ${sensorId}`)
+      const rawType = String(sensor.tipoMedida || sensor.tipo_medida || sensor.type || "").trim()
+      const name = rawType ? `${rawName} (${rawType})` : rawName
+
+      const rows = seriesBySensor.get(sensorId) ?? []
+      const data = rows
+        .filter((p) => {
+          const t = new Date(p.timestamp).getTime()
+          return Number.isFinite(t) && t >= from.getTime() && t <= to.getTime()
+        })
+        .map((p) => ({
+          time: Math.floor(new Date(p.timestamp).getTime() / 1000) as Time,
+          value: Number(p.promedio ?? 0),
+        }))
+        .sort((a, b) => (a.time as number) - (b.time as number))
 
       return {
         sensorId,
-        name: (() => {
-          const rawName = String(sensor.name || sensor.sensor || `Sensor ${sensorId}`)
-          const rawType = String(sensor.tipoMedida || sensor.tipo_medida || sensor.type || "").trim()
-          return rawType ? `${rawName} (${rawType})` : rawName
-        })(),
+        name,
         unit: String(sensor.unit || ""),
-        promedio: Number.isFinite(avg) ? avg : 0,
-        muestras: Number.isFinite(muestras) ? muestras : 0,
+        color: PALETTE[idx % PALETTE.length],
+        data,
       }
     })
+  }, [from, to, sourceSensors, seriesBySensor])
 
-    computed.sort((a, b) => b.promedio - a.promedio)
-    return computed
-  }, [from, to, sensorsToQuery, seriesBySensor])
+  const hasData = sensorSeries.some((s) => s.data.length > 0)
 
-  const chartConfig = {
-    promedio: {
-      label: "Promedio",
-      color: "#2563eb",
-    },
-  } satisfies ChartConfig
+  // ── Create chart once ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!containerRef.current) return
+    const chart = createChart(containerRef.current, {
+      ...getChartThemeOptions(isDark),
+      width: containerRef.current.clientWidth,
+      height: 320,
+      handleScroll: true,
+      handleScale: true,
+    })
+    chartRef.current = chart
 
-  if (!from || !to) {
-    return null
-  }
+    const ro = new ResizeObserver(() => {
+      if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth })
+    })
+    ro.observe(containerRef.current)
+
+    return () => {
+      ro.disconnect()
+      chart.remove()
+      chartRef.current = null
+      allSeriesRef.current = []
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Update theme ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    chartRef.current?.applyOptions(getChartThemeOptions(isDark))
+  }, [isDark])
+
+  // ── Rebuild all series when data or chart type changes ───────────────────
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+
+    // Remove old series
+    for (const s of allSeriesRef.current) {
+      chart.removeSeries(s)
+    }
+    allSeriesRef.current = []
+
+    if (sensorSeries.length === 0) return
+
+    for (const sensor of sensorSeries) {
+      if (sensor.data.length === 0) continue
+      const { color, data } = sensor
+
+      if (chartType === "line") {
+        const s = chart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, title: sensor.name })
+        s.setData(data)
+        allSeriesRef.current.push(s)
+      } else if (chartType === "area") {
+        const s = chart.addSeries(AreaSeries, {
+          lineColor: color,
+          topColor: `${color}44`,
+          bottomColor: `${color}05`,
+          lineWidth: 2,
+          priceLineVisible: false,
+          title: sensor.name,
+        })
+        s.setData(data)
+        allSeriesRef.current.push(s)
+      } else {
+        const s = chart.addSeries(HistogramSeries, {
+          color,
+          priceLineVisible: false,
+          title: sensor.name,
+        })
+        s.setData(data.map((d) => ({ ...d, color })))
+        allSeriesRef.current.push(s)
+      }
+    }
+
+    chart.timeScale().fitContent()
+  }, [sensorSeries, chartType])
+
+  if (!from || !to) return null
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <CardTitle>Promedio por Sensor</CardTitle>
-          <CardDescription>Promedio calculado con /api/promedios en el rango seleccionado</CardDescription>
+          <CardTitle>Tendencia por Sensor</CardTitle>
+          <CardDescription>
+            Evolución de los primeros {Math.min(sourceSensors.length, 8)} sensores en el período seleccionado
+            {coverage && coverage.total > coverage.queried
+              ? ` · resumen rápido: ${coverage.queried}/${coverage.total}`
+              : ""}
+          </CardDescription>
         </div>
-        {isRefreshing && (
-          <span className="text-xs text-muted-foreground animate-pulse">Actualizando...</span>
-        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {isRefreshing && (
+            <span className="text-xs text-muted-foreground animate-pulse">Actualizando…</span>
+          )}
+
+          {/* Tipo de gráfico */}
+          <div className="flex rounded-md border overflow-hidden">
+            {(["line", "area", "histogram"] as ChartType[]).map((t) => (
+              <Button
+                key={t}
+                size="sm"
+                variant={chartType === t ? "default" : "ghost"}
+                className="h-7 rounded-none px-3 text-xs"
+                onClick={() => setChartType(t)}
+              >
+                {t === "line" ? "Línea" : t === "area" ? "Área" : "Barras"}
+              </Button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
+
       <CardContent>
-        {coverage && coverage.total > sensorsToQuery.length && (
-          <div className="mb-3 text-xs text-muted-foreground">
-            Vista rápida basada en {sensorsToQuery.length}/{coverage.total} sensores.
+        {/* Legend */}
+        {sensorSeries.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {sensorSeries.map((s) => (
+              <div key={s.sensorId} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                <span className="truncate max-w-[140px]">{s.name}</span>
+              </div>
+            ))}
           </div>
         )}
-        {loading && rows.length === 0 ? (
-          <div className="h-72 flex items-center justify-center text-muted-foreground">Cargando…</div>
-        ) : rows.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-muted-foreground">Sin datos para el rango</div>
+
+        {loading && !hasData ? (
+          <div className="h-80 flex items-center justify-center text-muted-foreground">Cargando…</div>
+        ) : !hasData ? (
+          <div className="h-40 flex items-center justify-center text-muted-foreground">
+            Sin datos para el rango seleccionado
+          </div>
         ) : (
-          <ChartContainer config={chartConfig} className="h-72">
-              <BarChart data={rows} margin={{ left: 12, right: 12, top: 8, bottom: 32 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  interval={0}
-                  angle={-25}
-                  textAnchor="end"
-                  height={50}
-                  tick={{ fontSize: 10 }}
-                />
-                <YAxis tick={{ fontSize: 10 }} />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(label) => String(label ?? "")}
-                      valueFormatter={(value, _name, item) => {
-                        const row = (item?.payload || {}) as SensorAverageRow
-                        const unit = row?.unit ? ` ${row.unit}` : ""
-                        return `${Number(value || 0).toFixed(2)}${unit}`
-                      }}
-                    />
-                  }
-                />
-                <Bar 
-                  dataKey="promedio" 
-                  fill="var(--color-promedio)" 
-                  radius={[4, 4, 0, 0]}
-                  isAnimationActive={true}
-                  animationDuration={500}
-                  animationEasing="ease-out"
-                />
-              </BarChart>
-          </ChartContainer>
+          <div ref={containerRef} className="w-full" />
         )}
       </CardContent>
     </Card>
