@@ -1,11 +1,13 @@
 "use client"
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { useDeferredValue, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { DateRange } from "react-day-picker"
 import { backendApi, type PromediosBatchResponse } from "@/lib/backend-client"
 
 const MAX_ANALYTICS_SENSORS = 30
 const ANALYTICS_TARGET_POINTS = 96
+// Auto-refresh cada 60s cuando el rango incluye "ahora" (últimas 24h)
+const LIVE_REFRESH_INTERVAL_MS = 60_000
 
 function computeBucketMinutes(from: Date, to: Date, targetPoints = ANALYTICS_TARGET_POINTS): number {
   const totalMinutes = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 60000))
@@ -21,12 +23,19 @@ function emptyResponse(bucketMinutes = 15): PromediosBatchResponse {
   }
 }
 
+function isLiveRange(to: Date | undefined): boolean {
+  if (!to) return false
+  // Si el extremo superior del rango es dentro de las últimas 24h → modo live
+  return Date.now() - to.getTime() < 24 * 60 * 60 * 1000
+}
+
 export function useAnalyticsSeries(dateRange: DateRange, sensors?: any[]) {
   const deferredSensors = useDeferredValue(Array.isArray(sensors) ? sensors : [])
   const [data, setData] = useState<PromediosBatchResponse>(emptyResponse())
   const [loading, setLoading] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const hasLoadedOnceRef = useRef(false)
+  const fetchingRef = useRef(false)
 
   const sensorsToQuery = useMemo(() => {
     return deferredSensors
@@ -45,53 +54,68 @@ export function useAnalyticsSeries(dateRange: DateRange, sensors?: any[]) {
     return computeBucketMinutes(dateRange.from, dateRange.to)
   }, [dateRange.from, dateRange.to])
 
-  useEffect(() => {
-    let cancelled = false
+  const fetchSeries = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (fetchingRef.current) return
+    if (!dateRange.from || !dateRange.to || sensorIds.length === 0) {
+      setData(emptyResponse(bucketMinutes))
+      hasLoadedOnceRef.current = false
+      setLoading(false)
+      setIsRefreshing(false)
+      return
+    }
 
-    async function fetchSeries() {
-      if (!dateRange.from || !dateRange.to || sensorIds.length === 0) {
-        setData(emptyResponse(bucketMinutes))
-        hasLoadedOnceRef.current = false
-        setLoading(false)
-        setIsRefreshing(false)
-        return
-      }
+    fetchingRef.current = true
 
+    if (!hasLoadedOnceRef.current && !opts.silent) {
+      setLoading(true)
+    } else {
+      setIsRefreshing(true)
+    }
+
+    // Para rangos live, expandimos "hasta" a ahora mismo para incluir lecturas recientes
+    const hasta = isLiveRange(dateRange.to)
+      ? new Date().toISOString()
+      : dateRange.to.toISOString()
+
+    try {
+      const response = await backendApi.getPromediosBatch({
+        sensorInstaladoIds: sensorIds,
+        bucketMinutes,
+        desde: dateRange.from.toISOString(),
+        hasta,
+      })
+
+      setData(response)
+      hasLoadedOnceRef.current = true
+    } catch {
       if (!hasLoadedOnceRef.current) {
-        setLoading(true)
-      } else {
-        setIsRefreshing(true)
-      }
-
-      try {
-        const response = await backendApi.getPromediosBatch({
-          sensorInstaladoIds: sensorIds,
-          bucketMinutes,
-          desde: dateRange.from.toISOString(),
-          hasta: dateRange.to.toISOString(),
-        })
-
-        if (cancelled) return
-        setData(response)
-        hasLoadedOnceRef.current = true
-      } catch {
-        if (cancelled) return
         setData(emptyResponse(bucketMinutes))
         hasLoadedOnceRef.current = true
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-          setIsRefreshing(false)
-        }
       }
+    } finally {
+      fetchingRef.current = false
+      setLoading(false)
+      setIsRefreshing(false)
     }
+  }, [bucketMinutes, dateRange.from, dateRange.to, sensorIds])
 
+  // Fetch inicial y cuando cambian dependencias clave
+  useEffect(() => {
+    hasLoadedOnceRef.current = false
     void fetchSeries()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bucketMinutes, dateRange.from, dateRange.to, sensorKey])
 
-    return () => {
-      cancelled = true
-    }
-  }, [bucketMinutes, dateRange.from, dateRange.to, sensorKey, sensorIds])
+  // Auto-refresh en intervalos cuando el rango incluye "ahora"
+  useEffect(() => {
+    if (!isLiveRange(dateRange.to)) return
+
+    const timer = setInterval(() => {
+      void fetchSeries({ silent: true })
+    }, LIVE_REFRESH_INTERVAL_MS)
+
+    return () => clearInterval(timer)
+  }, [dateRange.to, fetchSeries])
 
   const seriesBySensor = useMemo(() => {
     const map = new Map<number, PromediosBatchResponse["sensores"][number]["puntos"]>()
@@ -112,5 +136,6 @@ export function useAnalyticsSeries(dateRange: DateRange, sensors?: any[]) {
     },
     loading,
     isRefreshing,
+    refresh: fetchSeries,
   }
 }
