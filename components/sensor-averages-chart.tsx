@@ -255,15 +255,18 @@ export function SensorAveragesChart({
           </div>
         )}
 
-        {loading && !hasData ? (
-          <div className="h-80 flex items-center justify-center text-muted-foreground">Cargando…</div>
-        ) : !hasData ? (
-          <div className="h-40 flex items-center justify-center text-muted-foreground">
-            Sin datos para el rango seleccionado
-          </div>
-        ) : (
-          <div ref={containerRef} className="w-full" />
-        )}
+        <div className="relative w-full">
+          {(!hasData || (loading && !hasData)) && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm text-muted-foreground">
+              {loading && !hasData ? "Cargando…" : "Sin datos para el rango seleccionado"}
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className={`w-full transition-opacity duration-300 ${!hasData ? "opacity-0" : "opacity-100"}`}
+            style={{ minHeight: 320 }}
+          />
+        </div>
       </CardContent>
     </Card>
   )

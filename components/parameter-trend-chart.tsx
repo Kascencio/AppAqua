@@ -362,15 +362,18 @@ export function ParameterTrendChart({
       </CardHeader>
 
       <CardContent>
-        {loading && chartData.length === 0 ? (
-          <div className="h-80 flex items-center justify-center text-muted-foreground">Cargando…</div>
-        ) : chartData.length === 0 ? (
-          <div className="h-40 flex items-center justify-center text-muted-foreground">
-            Sin datos para el rango seleccionado
-          </div>
-        ) : (
-          <div ref={containerRef} className="w-full" />
-        )}
+        <div className="relative w-full">
+          {(chartData.length === 0 || (loading && chartData.length === 0)) && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm text-muted-foreground">
+              {loading && chartData.length === 0 ? "Cargando…" : "Sin datos para el rango seleccionado"}
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className={`w-full transition-opacity duration-300 ${chartData.length === 0 ? "opacity-0" : "opacity-100"}`}
+            style={{ minHeight: 320 }}
+          />
+        </div>
       </CardContent>
     </Card>
   )
