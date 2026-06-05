@@ -38,12 +38,20 @@ export default function EditSensorDialog({
   const [sensorType, setSensorType] = useState(sensor.type)
   const [sensorName, setSensorName] = useState(sensor.name || "")
   const [branchId, setBranchId] = useState(String(sensor.branchId || ""))
-  const [facilityId, setFacilityId] = useState(String(sensor.facilityId || ""))
+  const [facilityId, setFacilityId] = useState(String(sensor.facilityId || sensor.id_instalacion || ""))
   const [parameter, setParameter] = useState(sensor.currentParameter || "")
   const [unit, setUnit] = useState(sensor.unit || "")
   const [status, setStatus] = useState<"active" | "inactive" | "alert" | "offline" | "maintenance">(sensor.status || "active")
   const [notes, setNotes] = useState(sensor.notes || "")
-  const [facilities, setFacilities] = useState<{ id: string; name: string; type: string }[]>([])
+
+  // Initialize facilities list from the current branch immediately (avoids empty Select on first render)
+  const [facilities, setFacilities] = useState<{ id: string; name: string; type: string }[]>(() => {
+    const currentBranchId = String(sensor.branchId || "")
+    if (!currentBranchId) return []
+    const found = branches.find((b) => String(b.id) === currentBranchId)
+    return (found?.facilities || []).map((f) => ({ id: String(f.id), name: f.name, type: f.type || "" }))
+  })
+
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [validationStatus, setValidationStatus] = useState<"idle" | "validating" | "valid" | "invalid">("idle")
@@ -74,18 +82,31 @@ export default function EditSensorDialog({
   // Inicializar los valores cuando se abre el diálogo
   useEffect(() => {
     if (open) {
+      const newBranchId = String(sensor.branchId || "")
+      const newFacilityId = String(sensor.facilityId || sensor.id_instalacion || "")
+
       setSensorType(sensor.type)
       setSensorName(sensor.name || "")
-      setBranchId(String(sensor.branchId || ""))
-      setFacilityId(String(sensor.facilityId || ""))
+      setBranchId(newBranchId)
+      setFacilityId(newFacilityId)
       setParameter(sensor.currentParameter || "")
       setUnit(sensor.unit || "")
       setStatus(sensor.status || "active")
       setNotes(sensor.notes || "")
       setErrors({})
       setValidationStatus("idle")
+
+      // Pre-cargar instalaciones de la sucursal actual para que el Select ya tenga opciones
+      if (newBranchId) {
+        const found = branches.find((b) => String(b.id) === newBranchId)
+        setFacilities(
+          (found?.facilities || []).map((f) => ({ id: String(f.id), name: f.name, type: f.type || "" }))
+        )
+      } else {
+        setFacilities([])
+      }
     }
-  }, [open, sensor])
+  }, [open, sensor, branches])
 
   // Limpiar errores cuando se cambian los valores
   useEffect(() => {
@@ -188,7 +209,10 @@ export default function EditSensorDialog({
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Editar Sensor</DialogTitle>
-          <DialogDescription>Modifique los datos del sensor {sensor.id}</DialogDescription>
+          <DialogDescription>
+            ID: <span className="font-mono font-semibold">{sensor.id_sensor_instalado ?? sensor.id ?? "—"}</span>
+            {" · "}{sensor.facilityName ? `Instalación: ${sensor.facilityName}` : "Sin instalación asignada"}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
@@ -219,8 +243,13 @@ export default function EditSensorDialog({
             )}
 
             <div className="grid gap-2">
-              <Label htmlFor="sensor-id">ID del Sensor</Label>
-              <Input id="sensor-id" value={sensor.id} disabled className="bg-muted font-mono" />
+              <Label htmlFor="sensor-id">ID del Sensor (instalado)</Label>
+              <Input
+                id="sensor-id"
+                value={sensor.id_sensor_instalado ?? sensor.id ?? ""}
+                disabled
+                className="bg-muted font-mono"
+              />
               <p className="text-xs text-muted-foreground">El ID del sensor no se puede modificar</p>
             </div>
 
