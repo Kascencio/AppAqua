@@ -165,6 +165,7 @@ export function ParameterTrendChart({
 
   const [chartType, setChartType] = useState<ChartType>("area")
   const [parameter, setParameter] = useState<ParamKey>("temperature")
+  const [chartReady, setChartReady] = useState(false)
 
   const from = dateRange?.from
   const to = dateRange?.to
@@ -229,29 +230,57 @@ export function ParameterTrendChart({
       .sort((a, b) => (a.time as number) - (b.time as number))
   }, [from, to, sourceSensors, seriesBySensor, parameter])
 
-  // ── Create chart once ────────────────────────────────────────────────────
+  // ── Create chart once the container is mounted and has dimensions ─────────
   useEffect(() => {
-    if (!containerRef.current) return
-    const chart = createChart(containerRef.current, {
-      ...getChartThemeOptions(isDark),
-      width: containerRef.current.clientWidth,
-      height: 320,
-      handleScroll: true,
-      handleScale: true,
-    })
-    chartRef.current = chart
+    const el = containerRef.current
+    if (!el) return
 
-    const ro = new ResizeObserver(() => {
-      if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth })
+    let chart: IChartApi | null = null
+    let ro: ResizeObserver | null = null
+
+    function initChart() {
+      if (chart) return
+      const w = el!.clientWidth
+      if (w === 0) return
+
+      chart = createChart(el!, {
+        ...getChartThemeOptions(isDark),
+        width: w,
+        height: 320,
+        handleScroll: true,
+        handleScale: true,
+      })
+      chartRef.current = chart
+      setChartReady(true)
+
+      ro!.observe(el!)
+    }
+
+    ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      const w = entry?.contentRect.width ?? 0
+      if (!chart) {
+        if (w > 0) initChart()
+      } else {
+        chart.applyOptions({ width: w })
+      }
     })
-    ro.observe(containerRef.current)
+
+    if (el.clientWidth > 0) {
+      initChart()
+      ro.observe(el)
+    } else {
+      ro.observe(el)
+    }
 
     return () => {
-      ro.disconnect()
-      chart.remove()
+      ro?.disconnect()
+      chart?.remove()
       chartRef.current = null
       seriesRef.current = null
+      setChartReady(false)
     }
+    // isDark intentionally excluded – handled by separate effect
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -263,10 +292,10 @@ export function ParameterTrendChart({
   // ── Rebuild series when type, data or color changes ──────────────────────
   useEffect(() => {
     const chart = chartRef.current
-    if (!chart) return
+    if (!chart || !chartReady) return
 
     if (seriesRef.current) {
-      chart.removeSeries(seriesRef.current)
+      try { chart.removeSeries(seriesRef.current) } catch { /* ignore */ }
       seriesRef.current = null
     }
 
@@ -295,7 +324,7 @@ export function ParameterTrendChart({
     }
 
     chart.timeScale().fitContent()
-  }, [chartData, chartType, meta.color])
+  }, [chartData, chartType, meta.color, chartReady])
 
   if (!from || !to) return null
 
@@ -362,16 +391,24 @@ export function ParameterTrendChart({
       </CardHeader>
 
       <CardContent>
-        <div className="relative w-full">
-          {(chartData.length === 0 || (loading && chartData.length === 0)) && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm text-muted-foreground">
-              {loading && chartData.length === 0 ? "Cargando…" : "Sin datos para el rango seleccionado"}
+        <div className="relative w-full" style={{ minHeight: 320 }}>
+          {/* Overlay: loading or empty */}
+          {loading && chartData.length === 0 && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-muted-foreground">
+              Cargando…
             </div>
           )}
+          {!loading && chartData.length === 0 && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-muted-foreground">
+              Sin datos para el rango seleccionado
+            </div>
+          )}
+
+          {/* Chart container — always rendered so the chart can initialize */}
           <div
             ref={containerRef}
-            className={`w-full transition-opacity duration-300 ${chartData.length === 0 ? "opacity-0" : "opacity-100"}`}
-            style={{ minHeight: 320 }}
+            className="w-full"
+            style={{ height: 320, opacity: chartData.length > 0 ? 1 : 0, transition: "opacity 0.3s" }}
           />
         </div>
       </CardContent>

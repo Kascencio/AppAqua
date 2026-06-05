@@ -84,6 +84,7 @@ export function SensorAveragesChart({
   const isDark = resolvedTheme === "dark"
 
   const [chartType, setChartType] = useState<ChartType>("line")
+  const [chartReady, setChartReady] = useState(false)
 
   const from = dateRange?.from
   const to = dateRange?.to
@@ -128,29 +129,58 @@ export function SensorAveragesChart({
 
   const hasData = sensorSeries.some((s) => s.data.length > 0)
 
-  // ── Create chart once ────────────────────────────────────────────────────
+  // ── Create chart once the container is mounted and has dimensions ─────────
   useEffect(() => {
-    if (!containerRef.current) return
-    const chart = createChart(containerRef.current, {
-      ...getChartThemeOptions(isDark),
-      width: containerRef.current.clientWidth,
-      height: 320,
-      handleScroll: true,
-      handleScale: true,
-    })
-    chartRef.current = chart
+    const el = containerRef.current
+    if (!el) return
 
-    const ro = new ResizeObserver(() => {
-      if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth })
+    let chart: IChartApi | null = null
+    let ro: ResizeObserver | null = null
+
+    function initChart() {
+      if (chart) return // already initialized
+      const w = el!.clientWidth
+      if (w === 0) return // not laid out yet, wait for resize
+
+      chart = createChart(el!, {
+        ...getChartThemeOptions(isDark),
+        width: w,
+        height: 320,
+        handleScroll: true,
+        handleScale: true,
+      })
+      chartRef.current = chart
+      setChartReady(true)
+
+      ro!.observe(el!)
+    }
+
+    ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      const w = entry?.contentRect.width ?? 0
+      if (!chart) {
+        if (w > 0) initChart()
+      } else {
+        chart.applyOptions({ width: w })
+      }
     })
-    ro.observe(containerRef.current)
+
+    // Try immediately, fall back to ResizeObserver
+    if (el.clientWidth > 0) {
+      initChart()
+      ro.observe(el)
+    } else {
+      ro.observe(el)
+    }
 
     return () => {
-      ro.disconnect()
-      chart.remove()
+      ro?.disconnect()
+      chart?.remove()
       chartRef.current = null
       allSeriesRef.current = []
+      setChartReady(false)
     }
+    // isDark intentionally excluded – handled by separate effect
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -159,18 +189,18 @@ export function SensorAveragesChart({
     chartRef.current?.applyOptions(getChartThemeOptions(isDark))
   }, [isDark])
 
-  // ── Rebuild all series when data or chart type changes ───────────────────
+  // ── Rebuild all series when data, chart type, or chart readiness changes ──
   useEffect(() => {
     const chart = chartRef.current
-    if (!chart) return
+    if (!chart || !chartReady) return
 
     // Remove old series
     for (const s of allSeriesRef.current) {
-      chart.removeSeries(s)
+      try { chart.removeSeries(s) } catch { /* ignore */ }
     }
     allSeriesRef.current = []
 
-    if (sensorSeries.length === 0) return
+    if (sensorSeries.length === 0 || !hasData) return
 
     for (const sensor of sensorSeries) {
       if (sensor.data.length === 0) continue
@@ -203,7 +233,7 @@ export function SensorAveragesChart({
     }
 
     chart.timeScale().fitContent()
-  }, [sensorSeries, chartType])
+  }, [sensorSeries, chartType, chartReady, hasData])
 
   if (!from || !to) return null
 
@@ -255,16 +285,24 @@ export function SensorAveragesChart({
           </div>
         )}
 
-        <div className="relative w-full">
-          {(!hasData || (loading && !hasData)) && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm text-muted-foreground">
-              {loading && !hasData ? "Cargando…" : "Sin datos para el rango seleccionado"}
+        <div className="relative w-full" style={{ minHeight: 320 }}>
+          {/* Overlay: loading or empty state */}
+          {(loading && !hasData) && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-muted-foreground">
+              Cargando…
             </div>
           )}
+          {(!loading && !hasData) && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center text-muted-foreground">
+              Sin datos para el rango seleccionado
+            </div>
+          )}
+
+          {/* Chart container — always rendered so the chart can initialize */}
           <div
             ref={containerRef}
-            className={`w-full transition-opacity duration-300 ${!hasData ? "opacity-0" : "opacity-100"}`}
-            style={{ minHeight: 320 }}
+            className="w-full"
+            style={{ height: 320, opacity: hasData ? 1 : 0, transition: "opacity 0.3s" }}
           />
         </div>
       </CardContent>
