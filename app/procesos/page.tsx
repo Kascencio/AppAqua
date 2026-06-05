@@ -17,7 +17,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Plus, AlertTriangle, Fish, X, Search, RefreshCw, PlayCircle, PauseCircle, CheckCircle2 } from "lucide-react"
 import type { Proceso, ProcesoConCalculos, ProcesoDetallado } from "@/types/proceso"
-import { GenerateProcessesButton } from "@/components/generate-processes-button"
+
 import { useRolePermissions } from "@/hooks/use-role-permissions"
 import { useAuth } from "@/context/auth-context"
 
@@ -367,7 +367,7 @@ export default function ProcesosPage() {
           </Button>
           {canManageProcesses && (
             <>
-              <GenerateProcessesButton onGenerate={refresh} />
+
               <Button onClick={() => setShowForm(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 {isSpeciesFilterActive ? "Nuevo Proceso de Especie" : "Nuevo Proceso"}
