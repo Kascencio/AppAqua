@@ -50,18 +50,27 @@ class WebSocketManager {
   private statusSubscribers: Map<string, Set<ConnectionStatusCallback>> = new Map()
   private reconnectAttempts: Map<string, number> = new Map()
   private pendingCloseTimeouts: Map<string, NodeJS.Timeout> = new Map()
-  private baseUrl: string
+  private _baseUrl: string | null = null
   private debug = process.env.NEXT_PUBLIC_WS_DEBUG === 'true'
 
   constructor() {
-    this.baseUrl = buildLecturasWsUrl()
-    
     // Cleanup al cerrar la página
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', () => {
         this.closeAll()
       })
     }
+  }
+
+  /**
+   * Resolver baseUrl de forma lazy (solo en el navegador)
+   * para que window.location esté disponible.
+   */
+  private get baseUrl(): string {
+    if (!this._baseUrl) {
+      this._baseUrl = buildLecturasWsUrl()
+    }
+    return this._baseUrl
   }
 
   /**
