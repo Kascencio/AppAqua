@@ -17,9 +17,9 @@ export function useEspecies() {
       setError(null)
       let data: any[] = []
       try {
-        data = await api.get<any[]>("/catalogo-especies")
+        data = await api.get<any[]>("/api/catalogo-especies")
       } catch {
-        data = await api.get<any[]>("/especies")
+        data = await api.get<any[]>("/api/especies")
       }
 
       const normalized = (Array.isArray(data) ? data : []).map((item) => ({

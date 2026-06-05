@@ -48,13 +48,21 @@ export default function SucursalesPage() {
       })
     : []
 
-  const handleAddBranch = (newBranch: Omit<EmpresaSucursal, "id_empresa_sucursal" | "fecha_registro">) => {
-    addBranch(newBranch)
+  const handleAddBranch = async (newBranch: Omit<EmpresaSucursal, "id_empresa_sucursal" | "fecha_registro">) => {
+    try {
+      await addBranch(newBranch)
+    } catch {
+      // Error already handled by toast in useBranches hook
+    }
   }
 
-  const handleEditBranch = (updatedBranch: EmpresaSucursal) => {
-    updateBranch(updatedBranch.id_empresa_sucursal, updatedBranch)
-    setSelectedBranch(null)
+  const handleEditBranch = async (updatedBranch: EmpresaSucursal) => {
+    try {
+      await updateBranch(updatedBranch.id_empresa_sucursal, updatedBranch)
+      setSelectedBranch(null)
+    } catch {
+      // Error already handled by toast in useBranches hook
+    }
   }
 
   const handleDeleteBranch = () => {

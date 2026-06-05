@@ -1,5 +1,6 @@
 // Rutas relativas siempre; Next.js rewrite (/api/*) las envía al backend real.
 const API_URL = ""
+const API_PREFIX = "/api"
 
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>
@@ -76,7 +77,8 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-    const url = `${API_URL}${endpoint}`
+    const normalizedEndpoint = endpoint.startsWith('/api') ? endpoint : `${API_PREFIX}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`
+    const url = `${API_URL}${normalizedEndpoint}`
     const headers: Record<string, string> = { ...this.getHeaders(), ...(options.headers ?? {}) }
     const method = (options.method || "GET").toUpperCase()
     const cacheKey = this.buildCacheKey(method, url, headers)
@@ -148,7 +150,7 @@ class ApiClient {
       return this.cloneData(data)
     } catch (error: any) {
       if (!isAbortError(error) && !(error instanceof ApiHttpError && (error.status === 401 || error.status === 403))) {
-        console.error(`API Request failed for ${url}:`, error)
+        console.error(`API Request failed for ${normalizedEndpoint}:`, error)
       }
       throw error
     } finally {

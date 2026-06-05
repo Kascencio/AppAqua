@@ -103,7 +103,7 @@ export default function NotificationsPage() {
 
     markIdAsProcessing(id)
     try {
-      await api.put(`/alertas/${id}/read`, { read: true })
+      await api.put(`/api/alertas/${id}/read`, { read: true })
       refreshAlerts()
 
       toast({
@@ -132,7 +132,7 @@ export default function NotificationsPage() {
 
     setIsBulkProcessing(true)
     try {
-      await api.put("/alertas/read-all", { read: true, ids })
+      await api.put("/api/alertas/read-all", { read: true, ids })
       refreshAlerts()
 
       toast({
@@ -165,7 +165,7 @@ export default function NotificationsPage() {
 
     markIdAsProcessing(id)
     try {
-      await api.delete(`/alertas/${id}`)
+      await api.delete(`/api/alertas/${id}`)
       refreshAlerts()
 
       toast({
@@ -202,7 +202,7 @@ export default function NotificationsPage() {
 
     setIsBulkProcessing(true)
     try {
-      await api.post("/alertas/delete-all", { ids })
+      await api.post("/api/alertas/delete-all", { ids })
       refreshAlerts()
 
       toast({
@@ -296,7 +296,7 @@ export default function NotificationsPage() {
       const isRead = Boolean(alert?.read ?? alert?.leida)
       if (!isRead && Number.isFinite(alertId) && alertId > 0) {
         try {
-          await api.put(`/alertas/${alertId}/read`, { read: true })
+          await api.put(`/api/alertas/${alertId}/read`, { read: true })
           refreshAlerts()
         } catch {
           // Si falla el marcado, no bloqueamos la navegación al sensor.

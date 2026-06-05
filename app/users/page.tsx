@@ -133,9 +133,9 @@ function UsersPageContent({ currentUser }: { currentUser: any }) {
     const loadAccessCatalogs = async () => {
       try {
         const [organizaciones, sucursales, instalaciones] = await Promise.all([
-          api.get<any[]>("/organizaciones").catch(() => []),
-          api.get<any[]>("/sucursales").catch(() => []),
-          api.get<any[]>("/instalaciones").catch(() => []),
+          api.get<any[]>("/api/organizaciones").catch(() => []),
+          api.get<any[]>("/api/sucursales").catch(() => []),
+          api.get<any[]>("/api/instalaciones").catch(() => []),
         ])
 
         if (!mounted) return

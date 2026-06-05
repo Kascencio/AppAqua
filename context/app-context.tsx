@@ -271,13 +271,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         alertasRes, 
         usuariosRes
       ] = await Promise.all([
-        (canReadOrgDirectory ? api.get<any[]>('/organizaciones') : Promise.resolve([] as any[])).catch(() => []),
-        (canReadOrgDirectory ? api.get<any[]>('/sucursales') : Promise.resolve([] as any[])).catch(() => []),
-        api.get<any[]>('/instalaciones').catch(() => []),
-        api.get<any[]>('/catalogo-especies').catch(() => []),
-        api.get<any[]>('/procesos').catch(() => []),
-        api.get<any[]>('/alertas').catch(() => []),
-        (canManageUsers ? api.get<any[]>('/usuarios') : Promise.resolve([] as any[])).catch(() => [])
+        (canReadOrgDirectory ? api.get<any[]>('/api/organizaciones') : Promise.resolve([] as any[])).catch(() => []),
+        (canReadOrgDirectory ? api.get<any[]>('/api/sucursales') : Promise.resolve([] as any[])).catch(() => []),
+        api.get<any[]>('/api/instalaciones').catch(() => []),
+        api.get<any[]>('/api/catalogo-especies').catch(() => []),
+        api.get<any[]>('/api/procesos').catch(() => []),
+        api.get<any[]>('/api/alertas').catch(() => []),
+        (canManageUsers ? api.get<any[]>('/api/usuarios') : Promise.resolve([] as any[])).catch(() => [])
       ])
 
       const derivedDirectory = canReadOrgDirectory

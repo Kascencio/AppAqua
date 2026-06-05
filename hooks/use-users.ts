@@ -40,7 +40,7 @@ interface UpdateUserInput extends User {
 // Función auxiliar para obtener roles disponibles
 async function obtenerRoles(): Promise<Record<string, number>> {
   try {
-    const roles = await api.get<RolAPI[]>("/roles")
+    const roles = await api.get<RolAPI[]>("/api/roles")
 
     const roleMap: Record<string, number> = {}
     roles.forEach((rol) => {
@@ -155,7 +155,7 @@ export function useUsers() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.get<UsuarioAPI[]>("/usuarios")
+      const data = await api.get<UsuarioAPI[]>("/api/usuarios")
       const usuariosConvertidos = data.map(convertirUsuarioAPI)
       setUsers(usuariosConvertidos)
     } catch (err) {
@@ -202,7 +202,7 @@ export function useUsers() {
         facilityAccess: userData.facilityAccess || [],
       }
 
-      await api.post("/usuarios", apiData)
+      await api.post("/api/usuarios", apiData)
 
       if (!providedPassword) {
         // Si no se asignó password manual, enviar flujo de recuperación
@@ -270,7 +270,7 @@ export function useUsers() {
           : {}),
       }
 
-      await api.put(`/usuarios/${userData.id}`, apiData)
+      await api.put(`/api/usuarios/${userData.id}`, apiData)
 
       toast({
         title: "Éxito",
@@ -301,7 +301,7 @@ export function useUsers() {
         throw new Error("La contraseña es obligatoria")
       }
 
-      await api.put(`/usuarios/${userId}`, { password })
+      await api.put(`/api/usuarios/${userId}`, { password })
 
       toast({
         title: "Éxito",
@@ -327,7 +327,7 @@ export function useUsers() {
     try {
       setLoading(true)
 
-      await api.delete(`/usuarios/${userId}`)
+      await api.delete(`/api/usuarios/${userId}`)
 
       toast({
         title: "Éxito",

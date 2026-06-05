@@ -64,15 +64,15 @@ export function useBranches() {
     try {
       if (canReadOrganizationDirectory(user?.role)) {
         const [orgs, sucursales] = await Promise.all([
-          api.get<any[]>('/organizaciones').catch(() => []),
-          api.get<any[]>('/sucursales').catch(() => []),
+          api.get<any[]>('/api/organizaciones').catch(() => []),
+          api.get<any[]>('/api/sucursales').catch(() => []),
         ])
 
         setBranches(mapOrganizacionesYSucursales(orgs, sucursales))
         return
       }
 
-      const instalaciones = await api.get<any[]>("/instalaciones").catch(() => [])
+      const instalaciones = await api.get<any[]>("/api/instalaciones").catch(() => [])
       const { organizaciones, sucursales } = deriveDirectoryFromInstalaciones(instalaciones)
       setBranches([...organizaciones, ...sucursales].map(empresaSucursalToBranch))
     } catch (err) {
@@ -90,7 +90,7 @@ export function useBranches() {
 
   // Agregar sucursal
   const addBranch = async (newBranch: Omit<EmpresaSucursal, "id_empresa_sucursal" | "fecha_registro">) => {
-    const endpoint = newBranch.tipo === 'empresa' ? '/organizaciones' : '/sucursales'
+    const endpoint = newBranch.tipo === 'empresa' ? '/api/organizaciones' : '/api/sucursales'
     const payload = newBranch.tipo === 'empresa'
       ? {
           nombre: newBranch.nombre,
@@ -98,7 +98,7 @@ export function useBranches() {
           correo: newBranch.email,
           estado: newBranch.estado_operativo,
           direccion: newBranch.calle,
-          id_estado: newBranch.id_estado,
+          id_estado: newBranch.id_estado || undefined,
           latitud: newBranch.latitud,
           longitud: newBranch.longitud,
         }
@@ -111,59 +111,74 @@ export function useBranches() {
           direccion_sucursal: newBranch.calle,
           numero_int_ext: newBranch.numero_int_ext,
           referencia: newBranch.referencia,
-          id_cp: newBranch.id_cp,
-          id_colonia: newBranch.id_colonia,
-          id_estado: newBranch.id_estado,
+          id_cp: newBranch.id_cp || undefined,
+          id_colonia: newBranch.id_colonia || undefined,
+          id_estado: newBranch.id_estado || undefined,
           latitud: newBranch.latitud,
           longitud: newBranch.longitud,
         }
 
-    await api.post(endpoint, payload)
-    await loadBranches()
+    try {
+      await api.post(endpoint, payload)
+      toast.success(newBranch.tipo === 'empresa' ? 'Empresa creada correctamente' : 'Sucursal creada correctamente')
+      await loadBranches()
+    } catch (error) {
+      console.error("Error creating branch:", error)
+      toast.error("Error al crear: " + (error instanceof Error ? error.message : "Error desconocido"))
+      throw error
+    }
   }
 
   // Actualizar sucursal
   const updateBranch = async (id: number, updated: Partial<EmpresaSucursal>) => {
     const target = branches.find((branch) => branch.id_empresa_sucursal === id)
     if (!target) {
+      toast.error("No se encontró el registro a actualizar")
       throw new Error("No se encontró el registro a actualizar")
     }
 
-    if (target.tipo === "empresa") {
-      await api.put(`/organizaciones/${id}`, {
-        ...(updated.nombre !== undefined ? { nombre: updated.nombre } : {}),
-        ...(updated.telefono !== undefined ? { telefono: updated.telefono } : {}),
-        ...(updated.email !== undefined ? { correo: updated.email } : {}),
-        ...(updated.estado_operativo !== undefined ? { estado: updated.estado_operativo } : {}),
-        ...(updated.calle !== undefined ? { direccion: updated.calle } : {}),
-        ...(updated.id_estado !== undefined ? { id_estado: updated.id_estado } : {}),
-        ...(updated.latitud !== undefined ? { latitud: updated.latitud } : {}),
-        ...(updated.longitud !== undefined ? { longitud: updated.longitud } : {}),
-      })
-    } else {
-      const realSucursalId = id - 10000
-      if (!Number.isFinite(realSucursalId) || realSucursalId <= 0) {
-        throw new Error("ID de sucursal inválido")
+    try {
+      if (target.tipo === "empresa") {
+        await api.put(`/api/organizaciones/${id}`, {
+          ...(updated.nombre !== undefined ? { nombre: updated.nombre } : {}),
+          ...(updated.telefono !== undefined ? { telefono: updated.telefono } : {}),
+          ...(updated.email !== undefined ? { correo: updated.email } : {}),
+          ...(updated.estado_operativo !== undefined ? { estado: updated.estado_operativo } : {}),
+          ...(updated.calle !== undefined ? { direccion: updated.calle } : {}),
+          ...(updated.id_estado !== undefined ? { id_estado: updated.id_estado } : {}),
+          ...(updated.latitud !== undefined ? { latitud: updated.latitud } : {}),
+          ...(updated.longitud !== undefined ? { longitud: updated.longitud } : {}),
+        })
+      } else {
+        const realSucursalId = id - 10000
+        if (!Number.isFinite(realSucursalId) || realSucursalId <= 0) {
+          throw new Error("ID de sucursal inválido")
+        }
+
+        await api.put(`/api/sucursales/${realSucursalId}`, {
+          ...(updated.id_padre !== undefined ? { id_organizacion: updated.id_padre } : {}),
+          ...(updated.nombre !== undefined ? { nombre_sucursal: updated.nombre } : {}),
+          ...(updated.telefono !== undefined ? { telefono_sucursal: updated.telefono } : {}),
+          ...(updated.email !== undefined ? { correo_sucursal: updated.email } : {}),
+          ...(updated.estado_operativo !== undefined ? { estado: updated.estado_operativo } : {}),
+          ...(updated.calle !== undefined ? { direccion_sucursal: updated.calle } : {}),
+          ...(updated.numero_int_ext !== undefined ? { numero_int_ext: updated.numero_int_ext } : {}),
+          ...(updated.referencia !== undefined ? { referencia: updated.referencia } : {}),
+          ...(updated.id_cp !== undefined ? { id_cp: updated.id_cp } : {}),
+          ...(updated.id_colonia !== undefined ? { id_colonia: updated.id_colonia } : {}),
+          ...(updated.id_estado !== undefined ? { id_estado: updated.id_estado } : {}),
+          ...(updated.latitud !== undefined ? { latitud: updated.latitud } : {}),
+          ...(updated.longitud !== undefined ? { longitud: updated.longitud } : {}),
+        })
       }
 
-      await api.put(`/sucursales/${realSucursalId}`, {
-        ...(updated.id_padre !== undefined ? { id_organizacion: updated.id_padre } : {}),
-        ...(updated.nombre !== undefined ? { nombre_sucursal: updated.nombre } : {}),
-        ...(updated.telefono !== undefined ? { telefono_sucursal: updated.telefono } : {}),
-        ...(updated.email !== undefined ? { correo_sucursal: updated.email } : {}),
-        ...(updated.estado_operativo !== undefined ? { estado: updated.estado_operativo } : {}),
-        ...(updated.calle !== undefined ? { direccion_sucursal: updated.calle } : {}),
-        ...(updated.numero_int_ext !== undefined ? { numero_int_ext: updated.numero_int_ext } : {}),
-        ...(updated.referencia !== undefined ? { referencia: updated.referencia } : {}),
-        ...(updated.id_cp !== undefined ? { id_cp: updated.id_cp } : {}),
-        ...(updated.id_colonia !== undefined ? { id_colonia: updated.id_colonia } : {}),
-        ...(updated.id_estado !== undefined ? { id_estado: updated.id_estado } : {}),
-        ...(updated.latitud !== undefined ? { latitud: updated.latitud } : {}),
-        ...(updated.longitud !== undefined ? { longitud: updated.longitud } : {}),
-      })
+      toast.success("Actualizado correctamente")
+      await loadBranches()
+    } catch (error) {
+      console.error("Error updating branch:", error)
+      toast.error("Error al actualizar: " + (error instanceof Error ? error.message : "Error desconocido"))
+      throw error
     }
-
-    await loadBranches()
   }
 
   // Eliminar sucursal
@@ -176,13 +191,13 @@ export function useBranches() {
 
     try {
       if (target.tipo === "empresa") {
-        await api.delete(`/organizaciones/${id}`)
+        await api.delete(`/api/organizaciones/${id}`)
       } else {
         const realSucursalId = id - 10000
         if (!Number.isFinite(realSucursalId) || realSucursalId <= 0) {
           throw new Error("ID de sucursal inválido")
         }
-        await api.delete(`/sucursales/${realSucursalId}`)
+        await api.delete(`/api/sucursales/${realSucursalId}`)
       }
 
       setBranches((prev) => prev.filter((b) => b.id_empresa_sucursal !== id))
